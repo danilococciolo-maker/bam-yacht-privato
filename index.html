@@ -58,15 +58,16 @@ footer{border-top:1px solid rgba(201,168,76,.07);padding:24px 20px;text-align:ce
 const { useState, useRef, useCallback, useEffect } = React;
 
 const STYLES = [
-  { id: "modern", label: "Modern Luxury", prompt: "ultra-modern minimalist luxury yacht salon interior, all existing windows and architectural openings preserved exactly as in original, pale white-oak wood floors, off-white painted walls between window frames, cream Italian leather sectional sofa, white Carrara marble coffee table with chamfered edges, brushed satin brass minimal hardware, recessed LED lighting, contemporary 2025 superyacht design, photorealistic professional architectural interior photography, magazine quality, ultra detailed 8k masterpiece, natural daylight through preserved windows" },
-  { id: "scandi", label: "Scandinavian", prompt: "serene Scandinavian minimalist yacht salon interior, all existing windows and architectural openings preserved exactly as in original, pale oak wood floors, off-white painted walls between window frames, ivory linen sofa with clean lines, light oak Nordic coffee table, organic wool throws, hand-thrown ceramic vases in muted earth tones, subtle brushed brass accents, contemporary Nordic yacht design, hygge atmosphere, photorealistic professional architectural interior photography, magazine quality, ultra detailed 8k masterpiece, soft natural daylight through preserved windows" },
-  { id: "artdeco", label: "Art Deco", prompt: "Art Deco luxury yacht salon interior, all existing windows and architectural openings preserved exactly as in original, dark walnut wood floors, deep navy painted walls between window frames, deep emerald green velvet upholstered tufted sofa with gold piping, black Calacatta marble coffee table with white veining and brass trim, polished brass fixtures, crystal chandelier, 1925 Manhattan glamour, photorealistic professional architectural interior photography, magazine quality, ultra detailed 8k masterpiece, warm dramatic lighting with daylight through preserved windows" },
-  { id: "med", label: "Mediterraneo", prompt: "warm Mediterranean coastal yacht salon interior, all existing windows and architectural openings preserved exactly as in original, light terracotta tiled floors, whitewashed walls between window frames, ivory handwoven linen and bouclé sofa with terracotta and deep navy cushions, rustic whitewashed wood coffee table, woven natural fiber rug, rattan accent chair, hand-thrown Sicilian ceramic vases, weathered driftwood elements, patinated aged brass nautical hardware, coastal villa elegance, photorealistic professional architectural interior photography, magazine quality, ultra detailed 8k masterpiece, warm golden hour Tuscan light through preserved windows" },
-  { id: "dark", label: "Contemporary Dark", prompt: "ultra-contemporary dark luxury yacht salon interior, all existing windows and architectural openings preserved exactly as in original, dark walnut wood floors, charcoal grey painted walls between window frames, dark grey nubuck leather sofa with bronze velvet cushions, black Calacatta Viola marble coffee table with bold white veining, hidden indirect LED cove lighting, bronze fixtures, masculine sophisticated automotive luxury vibe, photorealistic professional architectural interior photography, magazine quality, ultra detailed 8k masterpiece, dramatic moody contemporary lighting with daylight through preserved windows" },
+  { id: "modern", label: "Modern Luxury", prompt: "ultra-modern minimalist luxury yacht salon interior, panoramic glass windows on the sides showing open sea and bright sky horizon through transparent glazing, every window kept as clear glass with marine view visible, NO wall art NO mirrors NO paintings NO decorative panels NO marquetry inside window frames" },
+  { id: "scandi", label: "Scandinavian", prompt: "serene Scandinavian minimalist yacht salon interior, panoramic glass windows on the sides showing open sea and bright sky horizon through transparent glazing, every window kept as clear glass with marine view visible, NO wall art NO mirrors NO paintings NO decorative panels NO marquetry inside window frames" },
+  { id: "artdeco", label: "Art Deco", prompt: "Art Deco luxury yacht salon interior, panoramic glass windows on the sides showing open sea and bright sky horizon through transparent glazing, every window kept as clear glass with marine view visible, NO wall art NO mirrors NO paintings NO decorative panels NO marquetry inside window frames" },
+  { id: "med", label: "Mediterraneo", prompt: "warm Mediterranean coastal yacht salon interior, panoramic glass windows on the sides showing open sea and bright sky horizon through transparent glazing, every window kept as clear glass with marine view visible, NO wall art NO mirrors NO paintings NO decorative panels NO marquetry inside window frames, light terracotta tiled floors, whitewashed walls between window frames, ivory handwoven linen and bouclé sofa with terracotta and deep navy cushions, rustic whitewashed wood coffee table, woven natural fiber rug, rattan accent chair, hand-thrown Sicilian ceramic vases, weathered driftwood elements, patinated aged brass nautical hardware, coastal villa elegance, photorealistic professional architectural interior photography, magazine quality, ultra detailed 8k masterpiece, warm golden hour Tuscan light through preserved windows" },
+
+  { id: "dark", label: "Contemporary Dark", prompt: "ultra-contemporary dark luxury yacht salon interior, panoramic glass windows on the sides showing open sea and bright sky horizon through transparent glazing, every window kept as clear glass with marine view visible, NO wall art NO mirrors NO paintings NO decorative panels NO marquetry inside window frames" },
 ];
 
 const MODEL_ENDPOINT = "/v1/models/black-forest-labs/flux-canny-pro/predictions";
-const UPSCALE_ENDPOINT = "/v1/models/philz1337x/clarity-upscaler/predictions";
+const UPSCALE_ENDPOINT = "/v1/models/philz1337x/clarity-upscaler/predictions"
 const STEPS = ["Caricamento immagine\u2026", "Estrazione edge structure dalla foto\u2026", "Generazione concept refit con Flux Canny Pro\u2026", "Upscaling 4K UHD\u2026"];
 const LOGO_SRC = window.__LOGO__;
 
@@ -238,7 +239,7 @@ function BAMYachtApp() {
             control_image: img,
             prompt: promptText,
             steps: 50,
-            guidance: 18,
+            guidance: 11,
             safety_tolerance: 5,
             output_format: "jpg",
             output_quality: 95,
@@ -498,7 +499,7 @@ function BAMYachtApp() {
         title: "Impostazioni Replicate"
       }, "\u2699"),
       React.createElement("img", { src: LOGO_SRC, alt: "BAM Group" }),
-      React.createElement("span", { className: "badge" }, "v5.0 \u00B7 BETA")
+      React.createElement("span", { className: "badge" }, "v5.1 \u00B7 BETA")
     ),
     showSettings && React.createElement("div", {
       className: "modal-bg",
