@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#080c18">
+<title>BAM Yacht — AI Refit Studio</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Crimson+Text:wght@400;600&display=swap" rel="stylesheet">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:'Crimson Text',Georgia,serif;background:#080c18;color:#e8dcc8;min-height:100vh}
+.pill{background:transparent;border:1px solid rgba(201,168,76,.18);color:rgba(232,220,200,.5);padding:7px 18px;font-family:'Crimson Text',serif;font-size:14px;letter-spacing:.05em;cursor:pointer;border-radius:2px;transition:all .25s}
+.pill:hover{border-color:rgba(201,168,76,.45);color:rgba(201,168,76,.85)}
+.pill.on{background:rgba(201,168,76,.1);border-color:#c9a84c;color:#c9a84c}
+.dz{border:1px dashed rgba(201,168,76,.22);border-radius:3px;padding:56px 32px;text-align:center;cursor:pointer;transition:all .3s;background:rgba(255,255,255,.012)}
+.dz:hover,.dz.ov{border-color:rgba(201,168,76,.55);background:rgba(201,168,76,.035)}
+.gbtn{background:linear-gradient(135deg,#c9a84c,#a8843a);color:#060a14;border:none;padding:15px 56px;font-family:'Cormorant Garamond',serif;font-size:15px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;cursor:pointer;border-radius:2px;transition:all .3s}
+.gbtn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 10px 40px rgba(201,168,76,.32);filter:brightness(1.08)}
+.gbtn:disabled{opacity:.35;cursor:not-allowed}
+.pbtn{background:transparent;border:1px solid #c9a84c;color:#c9a84c;padding:10px 26px;font-family:'Cormorant Garamond',serif;font-size:13px;letter-spacing:.18em;text-transform:uppercase;cursor:pointer;border-radius:2px;transition:all .25s;font-weight:600}
+.pbtn:hover:not(:disabled){background:rgba(201,168,76,.1)}
+.pbtn:disabled{opacity:.4;cursor:not-allowed}
+.olink{display:inline-flex;align-items:center;border:1px solid rgba(201,168,76,.28);color:rgba(201,168,76,.78);padding:10px 26px;font-size:13px;letter-spacing:.12em;text-transform:uppercase;text-decoration:none;border-radius:2px;transition:all .25s}
+.olink:hover{background:rgba(201,168,76,.07);border-color:#c9a84c;color:#c9a84c}
+.sbtn{background:transparent;border:1px solid rgba(201,168,76,.13);color:rgba(232,220,200,.32);padding:10px 26px;font-size:13px;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;border-radius:2px;transition:color .25s}
+.sbtn:hover{color:rgba(232,220,200,.58)}
+@keyframes glow{0%,100%{opacity:.62}50%{opacity:1;text-shadow:0 0 22px rgba(201,168,76,.55)}}
+.ltxt{font-family:'Cormorant Garamond',serif;font-size:20px;font-style:italic;color:#c9a84c;letter-spacing:.08em;animation:glow 2.5s ease-in-out infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.sp{width:44px;height:44px;border:1.5px solid rgba(201,168,76,.1);border-top-color:#c9a84c;border-right-color:rgba(201,168,76,.4);border-radius:50%;animation:spin 1.1s linear infinite;margin:0 auto}
+@keyframes fu{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+.rv{animation:fu .65s ease forwards}
+.div{height:1px;background:linear-gradient(90deg,transparent,rgba(201,168,76,.1),transparent);margin:38px 0}
+.sn{font-family:'Cormorant Garamond',serif;font-size:10px;letter-spacing:.28em;color:rgba(201,168,76,.4);text-transform:uppercase;margin-bottom:3px}
+.sl{font-family:'Cormorant Garamond',serif;font-size:13px;letter-spacing:.18em;color:rgba(201,168,76,.82);text-transform:uppercase;margin-bottom:14px}
+.gear{position:absolute;left:20px;top:50%;transform:translateY(-50%);background:transparent;border:1px solid rgba(201,168,76,.18);color:rgba(201,168,76,.6);width:34px;height:34px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;transition:all .25s}
+.gear:hover{border-color:#c9a84c;color:#c9a84c}
+.gear.ok{border-color:rgba(80,200,120,.5);color:rgba(80,200,120,.85)}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px;animation:fu .25s}
+.modal{background:linear-gradient(180deg,#0c1126,#080c18);border:1px solid rgba(201,168,76,.18);border-radius:4px;max-width:500px;width:100%;padding:36px}
+.inp{width:100%;background:rgba(0,0,0,.35);border:1px solid rgba(201,168,76,.18);color:#e8dcc8;padding:11px 14px;font-family:'Crimson Text',serif;font-size:14px;border-radius:2px;letter-spacing:.02em}
+.inp:focus{outline:none;border-color:#c9a84c}
+header{border-bottom:1px solid rgba(201,168,76,.09);padding:12px 20px;display:flex;align-items:center;justify-content:center;background:rgba(8,12,24,.93);backdrop-filter:blur(18px);position:sticky;top:0;z-index:200}
+header img{height:44px;width:auto;object-fit:contain;display:block}
+.badge{position:absolute;right:20px;top:50%;transform:translateY(-50%);font-family:'Cormorant Garamond',serif;font-size:10px;color:rgba(201,168,76,.3);letter-spacing:.28em;text-transform:uppercase;border:1px solid rgba(201,168,76,.12);padding:3px 12px;border-radius:2px}
+main{max-width:840px;margin:0 auto;padding:48px 20px 80px;background:radial-gradient(ellipse 110% 55% at 50% 0%,rgba(201,168,76,.08) 0%,transparent 60%),linear-gradient(180deg,#080c18,#0b1020)}
+footer{border-top:1px solid rgba(201,168,76,.07);padding:24px 20px;text-align:center;font-size:10px;color:rgba(232,220,200,.12);letter-spacing:.2em;text-transform:uppercase;font-family:'Cormorant Garamond',serif}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>window.__LOGO__ = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNDAgOTYiIHdpZHRoPSIyNDAiIGhlaWdodD0iOTYiPjxyZWN0IHdpZHRoPSIyNDAiIGhlaWdodD0iOTYiIGZpbGw9IiMwODBjMTgiLz48dGV4dCB4PSIxMjAiIHk9IjU2IiBmb250LWZhbWlseT0iQ29ybW9yYW50IEdhcmFtb25kLEdlb3JnaWEsc2VyaWYiIGZvbnQtc2l6ZT0iNDIiIGZvbnQtd2VpZ2h0PSIzMDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNlOGRjYzgiIGxldHRlci1zcGFjaW5nPSI0Ij5CQU08L3RleHQ+PHRleHQgeD0iMTIwIiB5PSI3OCIgZm9udC1mYW1pbHk9IkNvcm1vcmFudCBHYXJhbW9uZCxHZW9yZ2lhLHNlcmlmIiBmb250LXNpemU9IjEwIiBsZXR0ZXItc3BhY2luZz0iOCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI2M5YTg0YyI+R1JPVVA8L3RleHQ+PC9zdmc+";</script>
+<script type="text/babel" data-presets="env,react">
+const { useState, useRef, useCallback, useEffect } = React;
+
+const STYLES = [
+  { id: "modern", label: "Modern Luxury", prompt: "Transform this yacht salon interior into ultra-modern minimalist luxury style with pale white-oak wood floors, off-white painted walls, cream Italian leather sectional sofa, white Carrara marble coffee table with chamfered edges, brushed satin brass minimal hardware, recessed LED lighting, contemporary 2025 superyacht aesthetic. Maintain the exact original room composition: keep all windows, glass surfaces and architectural openings completely identical to the original (do not paint over them, do not replace with art or panels), preserve the same perspective, same room proportions, same ceiling structure, same wall layout, same floor plan. Photorealistic professional architectural photography, magazine quality, ultra detailed 8k masterpiece." },
+  { id: "scandi", label: "Scandinavian", prompt: "Transform this yacht salon interior into serene Scandinavian minimalist style with pale oak wood floors, off-white painted walls, ivory linen sofa with clean lines, light oak Nordic coffee table, organic wool throws, hand-thrown ceramic vases in muted earth tones, subtle brushed brass accents, hygge atmosphere. Maintain the exact original room composition: keep all windows, glass surfaces and architectural openings completely identical to the original (do not paint over them, do not replace with art or panels), preserve the same perspective, same room proportions, same ceiling structure, same wall layout, same floor plan. Photorealistic professional architectural photography, magazine quality, ultra detailed 8k masterpiece." },
+  { id: "artdeco", label: "Art Deco", prompt: "Transform this yacht salon interior into Art Deco luxury style with dark walnut wood floors, deep navy painted walls, deep emerald green velvet upholstered tufted sofa with gold piping, black Calacatta marble coffee table with white veining and brass trim, polished brass fixtures, crystal chandelier, 1925 Manhattan glamour, warm dramatic lighting. Maintain the exact original room composition: keep all windows, glass surfaces and architectural openings completely identical to the original (do not paint over them, do not replace with art or panels), preserve the same perspective, same room proportions, same ceiling structure, same wall layout, same floor plan. Photorealistic professional architectural photography, magazine quality, ultra detailed 8k masterpiece." },
+  { id: "med", label: "Mediterraneo", prompt: "Transform this yacht salon interior into warm Mediterranean coastal style with light terracotta tiled floors, whitewashed walls, ivory handwoven linen and bouclé sofa with terracotta and deep navy cushions, rustic whitewashed wood coffee table, woven natural fiber rug, rattan accent chair, hand-thrown Sicilian ceramic vases, weathered driftwood elements, patinated aged brass nautical hardware, coastal villa elegance, warm golden hour Tuscan light. Maintain the exact original room composition: keep all windows, glass surfaces and architectural openings completely identical to the original (do not paint over them, do not replace with art or panels), preserve the same perspective, same room proportions, same ceiling structure, same wall layout, same floor plan. Photorealistic professional architectural photography, magazine quality, ultra detailed 8k masterpiece." },
+  { id: "dark", label: "Contemporary Dark", prompt: "Transform this yacht salon interior into ultra-contemporary dark luxury style with dark walnut wood floors, charcoal grey painted walls, dark grey nubuck leather sofa with bronze velvet cushions, black Calacatta Viola marble coffee table with bold white veining, hidden indirect LED cove lighting, bronze fixtures, masculine sophisticated automotive luxury vibe, dramatic moody contemporary lighting. Maintain the exact original room composition: keep all windows, glass surfaces and architectural openings completely identical to the original (do not paint over them, do not replace with art or panels), preserve the same perspective, same room proportions, same ceiling structure, same wall layout, same floor plan. Photorealistic professional architectural photography, magazine quality, ultra detailed 8k masterpiece." },
+];
+
+const MODEL_ENDPOINT = "/v1/models/black-forest-labs/flux-kontext-max/predictions";
+const UPSCALE_ENDPOINT = "/v1/models/philz1337x/clarity-upscaler/predictions";
+const STEPS = ["Caricamento immagine\u2026", "Refit con Flux Kontext Max (preserva architettura)\u2026", "Upscaling 4K UHD\u2026"];
+const LOGO_SRC = window.__LOGO__;
+
+function BAMYachtApp() {
+  const [img, setImg] = useState(null);
+  const [result, setResult] = useState(null);
+  const [resultB64, setResultB64] = useState(null);
+  const [style, setStyle] = useState(STYLES[0]);
+  const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState(0);
+  const [err, setErr] = useState(null);
+  const [pos, setPos] = useState(50);
+  const [drag, setDrag] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [token, setToken] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const [tokenInput, setTokenInput] = useState("");
+  const [imgAspect, setImgAspect] = useState("16/9");
+  const [compareMode, setCompareMode] = useState(false);
+  const [yacht, setYacht] = useState({ cantiere: "", modello: "", anno: "", oreMotore: "", manutenzione: "" });
+  const updateYacht = (k, v) => setYacht(prev => Object.assign({}, prev, { [k]: v }));
+  const fileRef = useRef();
+  const sliderRef = useRef();
+  const timer = useRef(null);
+
+  useEffect(() => {
+    try {
+      const t = localStorage.getItem("bam_replicate_token");
+      if (t) { setToken(t); setTokenInput(t); }
+    } catch (_) {}
+  }, []);
+
+  const saveToken = () => {
+    const t = (tokenInput || "").trim() || token;
+    if (!t) { setErr("Inserisci il token Replicate"); return; }
+    setToken(t);
+    setShowSettings(false);
+    setErr(null);
+    try { localStorage.setItem("bam_replicate_token", t); } catch (_) {}
+  };
+
+  const clearToken = () => {
+    setToken("");
+    setTokenInput("");
+    try { localStorage.removeItem("bam_replicate_token"); } catch (_) {}
+  };
+
+  const loadFile = useCallback((file) => {
+    if (!file || !file.type || !file.type.startsWith("image/")) return;
+    const r = new FileReader();
+    r.onload = (e) => {
+      const dataUrl = e.target.result;
+      // Preprocess: load in canvas, resize if too big, convert to RGB JPEG
+      const tmpImg = new Image();
+      tmpImg.onload = () => {
+        try {
+          // Resize max 2048 in qualsiasi dim (Kontext Max accetta qualsiasi aspect ratio)
+          const maxDim = 2048;
+          let w = tmpImg.width, h = tmpImg.height;
+          if (w > maxDim || h > maxDim) {
+            const ratio = maxDim / Math.max(w, h);
+            w = Math.round(w * ratio);
+            h = Math.round(h * ratio);
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(tmpImg, 0, 0, w, h);
+          const clean = canvas.toDataURL("image/jpeg", 0.95);
+          setImg(clean);
+          setImgAspect(w + "/" + h);
+        } catch (_) {
+          setImg(dataUrl);
+        }
+        setResult(null);
+        setResultB64(null);
+        setErr(null);
+      };
+      tmpImg.onerror = () => {
+        setImg(dataUrl);
+        setResult(null);
+        setResultB64(null);
+        setErr(null);
+      };
+      tmpImg.src = dataUrl;
+    };
+    r.readAsDataURL(file);
+  }, []);
+
+  const urlToDataUri = async (url) => {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = reject;
+      r.readAsDataURL(blob);
+    });
+  };
+
+  // Croppa il render finale per matchare esattamente l'aspect ratio del prima
+  const matchAspect = async (renderUrl, refDataUri) => {
+    return new Promise((resolve) => {
+      const refImg = new Image();
+      refImg.onload = () => {
+        const outImg = new Image();
+        outImg.crossOrigin = "anonymous";
+        outImg.onload = () => {
+          try {
+            const refRatio = refImg.width / refImg.height;
+            const srcRatio = outImg.width / outImg.height;
+            // Se aspect ratio già combaciano (tolleranza 2%), nessun crop
+            if (Math.abs(refRatio - srcRatio) < 0.02) {
+              resolve(renderUrl);
+              return;
+            }
+            let cropW, cropH, cropX, cropY;
+            if (srcRatio > refRatio) {
+              cropH = outImg.height;
+              cropW = outImg.height * refRatio;
+              cropX = (outImg.width - cropW) / 2;
+              cropY = 0;
+            } else {
+              cropW = outImg.width;
+              cropH = outImg.width / refRatio;
+              cropX = 0;
+              cropY = (outImg.height - cropH) / 2;
+            }
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.round(cropW);
+            canvas.height = Math.round(cropH);
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(outImg, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL("image/jpeg", 0.95));
+          } catch (_) {
+            resolve(renderUrl);
+          }
+        };
+        outImg.onerror = () => resolve(renderUrl);
+        outImg.src = renderUrl;
+      };
+      refImg.onerror = () => resolve(renderUrl);
+      refImg.src = refDataUri;
+    });
+  };
+
+  const generate = async () => {
+    if (!img || busy) return;
+    if (!token) { setShowSettings(true); return; }
+
+    setBusy(true); setResult(null); setResultB64(null); setErr(null); setStep(0);
+
+    try {
+      let sceneDescription = "";
+
+      // Compongo prompt finale: prima la descrizione architettonica (vincolo critico), poi lo stile
+      const promptText = style.prompt;
+
+      // STEP 2: Flux Canny Pro \u2014 edge detection + style transfer
+      setStep(1);
+      const startRes = await fetch(MODEL_ENDPOINT, {
+        method: "POST",
+        headers: { "Authorization": "Token " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          input: {
+            prompt: promptText,
+            input_image: img,
+            aspect_ratio: "match_input_image",
+            output_format: "jpg",
+            safety_tolerance: 6,
+          }
+        })
+      });
+
+      if (startRes.status === 401) throw new Error("Token Replicate non valido. Verificalo in Impostazioni.");
+      if (startRes.status === 402) throw new Error("Credito Replicate esaurito.");
+      if (startRes.status === 429) throw new Error("Troppe richieste. Attendi qualche secondo.");
+      if (!startRes.ok) {
+        const txt = await startRes.text();
+        throw new Error("Errore Replicate " + startRes.status + ": " + txt.slice(0, 200));
+      }
+
+      let prediction = await startRes.json();
+      let attempts = 0;
+      setStep(2);
+      while ((prediction.status === "starting" || prediction.status === "processing") && attempts < 90) {
+        await new Promise(r => setTimeout(r, 2000));
+        const pollPath = new URL(prediction.urls.get).pathname;
+        const pollRes = await fetch(pollPath, {
+          headers: { "Authorization": "Token " + token }
+        });
+        if (!pollRes.ok) throw new Error("Errore nel monitoraggio del render");
+        prediction = await pollRes.json();
+        attempts++;
+      }
+
+      if (prediction.status === "failed") throw new Error("Render fallito: " + (prediction.error || "errore sconosciuto"));
+      if (prediction.status === "canceled") throw new Error("Render annullato");
+      if (prediction.status !== "succeeded") throw new Error("Timeout del render. Riprova.");
+
+      const baseOutputUrl = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
+      if (!baseOutputUrl) throw new Error("Nessun output dal modello");
+
+      // STEP 3: Upscale 4x con clarity-upscaler per output 4K UHD
+      setStep(3);
+      try {
+        const upRes = await fetch(UPSCALE_ENDPOINT, {
+          method: "POST",
+          headers: { "Authorization": "Token " + token, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            input: {
+              image: baseOutputUrl,
+              scale_factor: 4,
+              dynamic: 6,
+              creativity: 0.4,
+              resemblance: 0.7,
+              num_inference_steps: 30,
+            }
+          })
+        });
+
+        if (!upRes.ok) {
+          // Fallback: usa output base senza upscale
+          const matched = await matchAspect(baseOutputUrl, img);
+          setResult(matched);
+          urlToDataUri(matched).then(setResultB64).catch(() => {});
+          return;
+        }
+
+        let upscale = await upRes.json();
+        let upAttempts = 0;
+        while ((upscale.status === "starting" || upscale.status === "processing") && upAttempts < 150) {
+          await new Promise(r => setTimeout(r, 2000));
+          const upPollPath = new URL(upscale.urls.get).pathname;
+          const upPollRes = await fetch(upPollPath, {
+            headers: { "Authorization": "Token " + token }
+          });
+          if (!upPollRes.ok) break;
+          upscale = await upPollRes.json();
+          upAttempts++;
+        }
+
+        const rawUrl = upscale.status === "succeeded"
+          ? (Array.isArray(upscale.output) ? upscale.output[0] : upscale.output)
+          : baseOutputUrl;
+
+        // Match aspect ratio del prima (rimuove banda nera)
+        const finalUrl = await matchAspect(rawUrl, img);
+
+        setResult(finalUrl);
+        urlToDataUri(finalUrl).then(setResultB64).catch(() => {});
+      } catch (_) {
+        const matched = await matchAspect(baseOutputUrl, img);
+        setResult(matched);
+        urlToDataUri(matched).then(setResultB64).catch(() => {});
+      }
+
+    } catch (e) {
+      setErr(e.message || "Errore imprevisto");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const downloadPDF = async () => {
+    if (!window.jspdf || !img || !result) return;
+    setPdfBusy(true);
+    try {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      const W = 297, H = 210;
+
+      const aspectParts = imgAspect.split("/");
+      const aw = parseFloat(aspectParts[0]) || 16;
+      const ah = parseFloat(aspectParts[1]) || 9;
+      const ratio = aw / ah;
+      const fitImage = (maxW, maxH) => {
+        const widthFirst = maxW / ratio;
+        if (widthFirst <= maxH) return { w: maxW, h: widthFirst };
+        return { w: maxH * ratio, h: maxH };
+      };
+      const date = new Date().toLocaleDateString("it-IT", { day: "2-digit", month: "long", year: "numeric" });
+
+      const drawPageHeader = (subtitle) => {
+        doc.setFillColor(8, 12, 24);
+        doc.rect(0, 0, W, H, "F");
+        // Logo BAM disegnato direttamente in PDF (rect + testo, no immagine)
+        doc.setFillColor(8, 12, 24);
+        doc.rect(12, 5, 32, 12, "F");
+        doc.setTextColor(232, 220, 200);
+        doc.setFontSize(11);
+        doc.setFont(undefined, "normal");
+        doc.text("BAM", 28, 12, { align: "center" });
+        doc.setFontSize(4);
+        doc.setTextColor(201, 168, 76);
+        doc.text("GROUP", 28, 15.5, { align: "center" });
+        doc.setFontSize(7);
+        doc.setTextColor(201, 168, 76);
+        doc.text("YACHT \u00B7 AI REFIT STUDIO", 50, 10);
+        doc.setFontSize(11);
+        doc.setTextColor(232, 220, 200);
+        doc.text(subtitle, 50, 16);
+        doc.setFontSize(8);
+        doc.setTextColor(201, 168, 76);
+        doc.text(style.label.toUpperCase(), W - 12, 10, { align: "right" });
+        doc.setTextColor(180, 170, 140);
+        doc.text(date, W - 12, 16, { align: "right" });
+        doc.setDrawColor(201, 168, 76);
+        doc.setLineWidth(0.2);
+        doc.line(12, 21, W - 12, 21);
+      };
+
+      const hasYacht = !!(yacht.cantiere || yacht.modello || yacht.anno || yacht.oreMotore || yacht.manutenzione);
+
+      // ============ PAGINA UNICA: CONFRONTO PRIMA / DOPO + SCHEDA BARCA SOTTO ============
+      drawPageHeader("Confronto e Scheda Tecnica");
+
+      const photoAreaTop = 27;
+      const photoAreaBottom = hasYacht ? 138 : 192;
+      const gap = 5;
+      const padX = 10;
+      const p2MaxW = (W - padX * 2 - gap) / 2;
+      const p2MaxH = photoAreaBottom - photoAreaTop;
+      const p2Img = fitImage(p2MaxW, p2MaxH);
+
+      const leftX = padX + (p2MaxW - p2Img.w) / 2;
+      const p2Y = photoAreaTop + (p2MaxH - p2Img.h) / 2;
+
+      try { doc.addImage(img, "JPEG", leftX, p2Y, p2Img.w, p2Img.h, undefined, "FAST"); }
+      catch (_) { try { doc.addImage(img, "PNG", leftX, p2Y, p2Img.w, p2Img.h, undefined, "FAST"); } catch (e) {} }
+      doc.setFillColor(40, 50, 70);
+      doc.rect(leftX, p2Y + p2Img.h - 7, 24, 7, "F");
+      doc.setTextColor(232, 220, 200);
+      doc.setFontSize(8);
+      doc.text("PRIMA", leftX + 3, p2Y + p2Img.h - 2);
+
+      const rightX = padX + p2MaxW + gap + (p2MaxW - p2Img.w) / 2;
+      try { doc.addImage(resultB64 || result, "JPEG", rightX, p2Y, p2Img.w, p2Img.h, undefined, "FAST"); }
+      catch (_) { try { doc.addImage(resultB64 || result, "PNG", rightX, p2Y, p2Img.w, p2Img.h, undefined, "FAST"); } catch (e) {} }
+      doc.setFillColor(201, 168, 76);
+      doc.rect(rightX, p2Y + p2Img.h - 7, 70, 7, "F");
+      doc.setTextColor(8, 12, 24);
+      doc.setFontSize(8);
+      doc.text("DOPO \u00B7 " + style.label.toUpperCase(), rightX + 3, p2Y + p2Img.h - 2);
+
+      // Scheda barca elegante sotto le foto
+      if (hasYacht) {
+        const sTop = 145;
+        doc.setDrawColor(201, 168, 76);
+        doc.setLineWidth(0.25);
+        doc.line(12, sTop, W - 12, sTop);
+
+        doc.setFontSize(8);
+        doc.setTextColor(201, 168, 76);
+        doc.text("SCHEDA IMBARCAZIONE", 12, sTop + 7);
+
+        const fields = [];
+        if (yacht.cantiere) fields.push({ k: "Cantiere", v: yacht.cantiere });
+        if (yacht.modello) fields.push({ k: "Modello", v: yacht.modello });
+        if (yacht.anno) fields.push({ k: "Anno di costruzione", v: yacht.anno });
+        if (yacht.oreMotore) fields.push({ k: "Ore motore", v: yacht.oreMotore });
+
+        const colCount = Math.max(fields.length, 1);
+        const colW = (W - 24) / 4;
+        fields.forEach((f, i) => {
+          const cx = 12 + colW * i;
+          doc.setFontSize(7);
+          doc.setTextColor(180, 170, 140);
+          doc.text(f.k.toUpperCase(), cx, sTop + 15);
+          doc.setFontSize(11);
+          doc.setTextColor(232, 220, 200);
+          doc.text(f.v, cx, sTop + 22);
+        });
+
+        if (yacht.manutenzione) {
+          const mY = sTop + 32;
+          doc.setDrawColor(201, 168, 76);
+          doc.setLineWidth(0.1);
+          doc.line(12, mY - 4, W - 12, mY - 4);
+          doc.setFontSize(7);
+          doc.setTextColor(180, 170, 140);
+          doc.text("NOTE MANUTENZIONE", 12, mY);
+          doc.setFontSize(9);
+          doc.setTextColor(232, 220, 200);
+          const wrapped = doc.splitTextToSize(yacht.manutenzione, W - 24);
+          doc.text(wrapped, 12, mY + 6);
+        }
+      }
+
+      doc.setDrawColor(201, 168, 76);
+      doc.setLineWidth(0.15);
+      doc.line(12, H - 12, W - 12, H - 12);
+      doc.setFontSize(6.5);
+      doc.setTextColor(180, 170, 140);
+      doc.text("BAM GROUP \u00B7 LUXURY NAUTICAL AI \u00B7 TORINO", 12, H - 6);
+      doc.text("bamgroup.it", W - 12, H - 6, { align: "right" });
+      doc.setTextColor(110, 100, 80);
+      doc.setFontSize(6);
+      doc.text("Concept generato tramite AI. Render indicativo, non rappresenta un progetto esecutivo.", W / 2, H - 2.5, { align: "center" });
+
+      doc.save("BAM_Refit_" + style.label.replace(/\s+/g, "_") + "_" + Date.now() + ".pdf");
+    } catch (e) {
+      setErr("Errore PDF: " + e.message);
+    } finally {
+      setPdfBusy(false);
+    }
+  };
+
+  const moveSlider = useCallback((cx) => {
+    if (!sliderRef.current) return;
+    const rect = sliderRef.current.getBoundingClientRect();
+    const newPos = ((cx - rect.left) / rect.width) * 100;
+    setPos(Math.max(2, Math.min(98, newPos)));
+  }, []);
+
+  const G = "'Cormorant Garamond', Georgia, serif";
+
+  return React.createElement("div", null,
+    React.createElement("header", null,
+      React.createElement("button", {
+        className: "gear" + (token ? " ok" : ""),
+        onClick: () => setShowSettings(true),
+        title: "Impostazioni Replicate"
+      }, "\u2699"),
+      React.createElement("img", { src: LOGO_SRC, alt: "BAM Group" }),
+      React.createElement("span", { className: "badge" }, "v7.0 \u00B7 BETA")
+    ),
+    showSettings && React.createElement("div", {
+      className: "modal-bg",
+      onClick: (e) => { if (e.target.classList.contains("modal-bg")) setShowSettings(false); }
+    },
+      React.createElement("div", { className: "modal" },
+        React.createElement("div", { style: { fontFamily: G, fontSize: 22, color: "#e8dcc8", marginBottom: 8, fontWeight: 300, letterSpacing: ".05em" } }, "Impostazioni"),
+        React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.4)", marginBottom: 26, lineHeight: 1.7 } },
+          "BAM Yacht usa ", React.createElement("strong", { style: { color: "#c9a84c" } }, "Replicate"), " con pipeline professionale: ", React.createElement("em", null, "Flux Canny Pro"), " (edge detection che preserva finestre, muri e mobili) + ", React.createElement("em", null, "Clarity Upscaler"), " 4\u00D7 per output 4K UHD. Costo: ~$0.10 a render, tempo 90-150 secondi."
+        ),
+        React.createElement("div", { className: "sn", style: { marginBottom: 8 } }, "Replicate API Token"),
+        React.createElement("input", {
+          className: "inp",
+          type: "password",
+          placeholder: "r8_...",
+          value: tokenInput,
+          onChange: (e) => setTokenInput(e.target.value),
+          autoFocus: true
+        }),
+        React.createElement("div", { style: { fontSize: 12, color: "rgba(232,220,200,.32)", marginTop: 10, lineHeight: 1.6 } },
+          "Crea il token su ",
+          React.createElement("a", {
+            href: "https://replicate.com/account/api-tokens",
+            target: "_blank",
+            rel: "noopener noreferrer",
+            style: { color: "#c9a84c", textDecoration: "underline" }
+          }, "replicate.com/account/api-tokens"),
+          ". Resta nel tuo browser, non viene salvato da BAM."
+        ),
+        React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 28, justifyContent: "flex-end", flexWrap: "wrap" } },
+          token && React.createElement("button", { className: "sbtn", onClick: clearToken }, "Rimuovi Token"),
+          React.createElement("button", { className: "sbtn", onClick: () => setShowSettings(false) }, "Annulla"),
+          React.createElement("button", {
+            className: "pbtn",
+            onClick: saveToken,
+            disabled: !tokenInput.trim() && !token
+          }, "Salva")
+        )
+      )
+    ),
+    React.createElement("main", null,
+      React.createElement("div", { style: { textAlign: "center", marginBottom: 56 } },
+        React.createElement("div", { style: { fontFamily: G, fontSize: 11, letterSpacing: ".38em", color: "rgba(201,168,76,.4)", textTransform: "uppercase", marginBottom: 18 } }, "Yacht \u00B7 AI Refit Studio"),
+        React.createElement("h1", { style: { fontFamily: G, fontSize: "clamp(28px,6vw,52px)", fontWeight: 300, lineHeight: 1.15, color: "#e8dcc8", marginBottom: 18, letterSpacing: ".03em" } },
+          "Dal ",
+          React.createElement("em", { style: { color: "rgba(232,220,200,.32)" } }, "prima"),
+          " al ",
+          React.createElement("em", { style: { color: "#c9a84c" } }, "concept refit"),
+          React.createElement("br"),
+          "in pochi secondi."
+        ),
+        React.createElement("p", { style: { fontSize: 16, color: "rgba(232,220,200,.34)", maxWidth: 420, margin: "0 auto", lineHeight: 1.7 } }, "Flux Kontext Max: lo state-of-the-art per editing contestuale. L'AI capisce dall'immagine cosa preservare (finestre, geometria, prospettiva) e applica solo lo stile richiesto a muri, pavimenti, mobili e arredi."),
+        !token && React.createElement("div", { style: { marginTop: 22, display: "inline-block", padding: "10px 22px", background: "rgba(201,168,76,.07)", border: "1px solid rgba(201,168,76,.25)", borderRadius: 2, fontSize: 13, color: "#c9a84c", letterSpacing: ".05em" } }, "Configura il token Replicate dalle Impostazioni (\u2699)")
+      ),
+      React.createElement("div", { style: { marginBottom: 32 } },
+        React.createElement("div", { className: "sn" }, "01"),
+        React.createElement("div", { className: "sl" }, "Carica il Prima"),
+        !img ? React.createElement("div", {
+          className: "dz" + (drag ? " ov" : ""),
+          onClick: () => fileRef.current && fileRef.current.click(),
+          onDrop: (e) => { e.preventDefault(); setDrag(false); loadFile(e.dataTransfer.files[0]); },
+          onDragOver: (e) => { e.preventDefault(); setDrag(true); },
+          onDragLeave: () => setDrag(false)
+        },
+          React.createElement("div", { style: { width: 52, height: 52, margin: "0 auto 18px", border: "1px solid rgba(201,168,76,.25)", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, opacity: .42 } }, "\u2191"),
+          React.createElement("div", { style: { fontFamily: G, fontSize: 18, color: "rgba(232,220,200,.4)", marginBottom: 8 } }, "Tocca o trascina la foto degli interni"),
+          React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.18)" } }, "JPG \u00B7 PNG \u00B7 WEBP \u2014 max 10 MB")
+        ) : React.createElement("div", { style: { position: "relative", borderRadius: 3, overflow: "hidden" } },
+          React.createElement("img", { src: img, alt: "Prima", style: { width: "100%", maxHeight: 440, objectFit: "cover", display: "block" } }),
+          React.createElement("button", {
+            onClick: () => { setImg(null); setResult(null); setResultB64(null); },
+            style: { position: "absolute", top: 10, right: 10, width: 30, height: 30, background: "rgba(8,12,24,.85)", border: "1px solid rgba(201,168,76,.28)", color: "#c9a84c", borderRadius: "50%", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }
+          }, "\u00D7"),
+          React.createElement("div", { style: { position: "absolute", bottom: 12, left: 12, background: "rgba(8,12,24,.72)", padding: "4px 12px", fontSize: 10, letterSpacing: ".2em", color: "rgba(232,220,200,.55)", textTransform: "uppercase", borderRadius: 2 } }, "Prima")
+        ),
+        React.createElement("input", {
+          ref: fileRef,
+          type: "file",
+          accept: "image/*",
+          style: { display: "none" },
+          onChange: (e) => loadFile(e.target.files[0])
+        })
+      ),
+      React.createElement("div", { className: "div" }),
+      React.createElement("div", { style: { marginBottom: 42 } },
+        React.createElement("div", { className: "sn" }, "02"),
+        React.createElement("div", { className: "sl" }, "Stile Refit"),
+        React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+          STYLES.map(s => React.createElement("button", {
+            key: s.id,
+            className: "pill" + (style.id === s.id ? " on" : ""),
+            onClick: () => setStyle(s)
+          }, s.label))
+        )
+      ),
+      React.createElement("div", { className: "div" }),
+      React.createElement("div", { style: { marginBottom: 42 } },
+        React.createElement("div", { className: "sn" }, "03"),
+        React.createElement("div", { className: "sl" }, "Scheda imbarcazione \u00B7 ", React.createElement("span", { style: { fontSize: 12, color: "rgba(232,220,200,.3)", fontWeight: 400, letterSpacing: 0, textTransform: "none" } }, "opzionale")),
+        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 } },
+          React.createElement("div", null,
+            React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.42)", marginBottom: 6, letterSpacing: 1, textTransform: "uppercase" } }, "Cantiere"),
+            React.createElement("input", { className: "inp", placeholder: "es. Sanlorenzo, Ferretti, Azimut", value: yacht.cantiere, onChange: (e) => updateYacht("cantiere", e.target.value) })
+          ),
+          React.createElement("div", null,
+            React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.42)", marginBottom: 6, letterSpacing: 1, textTransform: "uppercase" } }, "Modello"),
+            React.createElement("input", { className: "inp", placeholder: "es. SL96 Asymmetric", value: yacht.modello, onChange: (e) => updateYacht("modello", e.target.value) })
+          ),
+          React.createElement("div", null,
+            React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.42)", marginBottom: 6, letterSpacing: 1, textTransform: "uppercase" } }, "Anno di costruzione"),
+            React.createElement("input", { className: "inp", placeholder: "es. 2008", value: yacht.anno, onChange: (e) => updateYacht("anno", e.target.value) })
+          ),
+          React.createElement("div", null,
+            React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.42)", marginBottom: 6, letterSpacing: 1, textTransform: "uppercase" } }, "Ore motore"),
+            React.createElement("input", { className: "inp", placeholder: "es. 2.450", value: yacht.oreMotore, onChange: (e) => updateYacht("oreMotore", e.target.value) })
+          ),
+          React.createElement("div", { style: { gridColumn: "1 / span 2" } },
+            React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.42)", marginBottom: 6, letterSpacing: 1, textTransform: "uppercase" } }, "Note manutenzione"),
+            React.createElement("input", { className: "inp", placeholder: "es. Refit ponte 2022, motori revisionati 2024", value: yacht.manutenzione, onChange: (e) => updateYacht("manutenzione", e.target.value) })
+          )
+        )
+      ),
+      React.createElement("div", { style: { textAlign: "center", marginBottom: 42 } },
+        React.createElement("button", {
+          className: "gbtn",
+          onClick: generate,
+          disabled: !img || busy
+        }, busy ? "Generazione in corso\u2026" : "Genera Concept Refit"),
+        err && React.createElement("div", { style: { marginTop: 14, background: "rgba(220,80,80,.07)", border: "1px solid rgba(220,80,80,.2)", borderRadius: 3, padding: "12px 18px", color: "#e08080", fontSize: 14, lineHeight: 1.5 } }, err)
+      ),
+      busy && React.createElement("div", { style: { textAlign: "center", padding: "56px 32px", background: "rgba(255,255,255,.012)", border: "1px solid rgba(201,168,76,.07)", borderRadius: 3, marginBottom: 32 } },
+        React.createElement("div", { className: "sp", style: { marginBottom: 26 } }),
+        React.createElement("div", { className: "ltxt" }, STEPS[step]),
+        React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.16)", marginTop: 10 } }, "il rendering richiede circa 15-40 secondi")
+      ),
+      result && img && React.createElement("div", { className: "rv" },
+        React.createElement("div", { className: "div" }),
+        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16 } },
+          React.createElement("div", null,
+            React.createElement("div", { className: "sn" }, "04"),
+            React.createElement("div", { className: "sl", style: { marginBottom: 0 } }, compareMode ? "Confronto Prima / Dopo" : "Concept Refit")
+          ),
+          React.createElement("span", { style: { fontSize: 12, color: "rgba(232,220,200,.2)" } }, compareMode ? "\u2190 trascina la riga \u2192" : "tocca \u21D4 per confrontare")
+        ),
+        !compareMode ? React.createElement("div", {
+          style: { position: "relative", borderRadius: 3, overflow: "hidden", aspectRatio: imgAspect, background: "#0b1020" }
+        },
+          React.createElement("img", {
+            src: result,
+            alt: "Dopo",
+            crossOrigin: "anonymous",
+            style: { width: "100%", height: "100%", objectFit: "cover", display: "block" }
+          }),
+          React.createElement("button", {
+            onClick: () => setCompareMode(true),
+            title: "Confronta prima / dopo",
+            style: { position: "absolute", top: 12, left: 12, width: 40, height: 40, background: "rgba(8,12,24,.86)", border: "1px solid rgba(201,168,76,.5)", color: "#c9a84c", borderRadius: 3, cursor: "pointer", fontSize: 17, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }
+          }, "\u21D4"),
+          React.createElement("div", { style: { position: "absolute", top: 12, right: 12, background: "rgba(201,168,76,.86)", padding: "5px 14px", fontSize: 10, letterSpacing: ".18em", color: "#060a14", textTransform: "uppercase", borderRadius: 2, fontWeight: 600 } }, style.label)
+        ) : React.createElement("div", {
+          ref: sliderRef,
+          style: { position: "relative", cursor: "ew-resize", borderRadius: 3, overflow: "hidden", userSelect: "none", aspectRatio: imgAspect, background: "#0b1020" },
+          onMouseMove: (e) => e.buttons === 1 && moveSlider(e.clientX),
+          onMouseDown: (e) => moveSlider(e.clientX),
+          onTouchMove: (e) => moveSlider(e.touches[0].clientX)
+        },
+          React.createElement("img", {
+            src: result,
+            alt: "Dopo",
+            crossOrigin: "anonymous",
+            style: { width: "100%", height: "100%", objectFit: "cover", display: "block", position: "absolute", inset: 0 }
+          }),
+          React.createElement("div", { style: { position: "absolute", inset: 0, clipPath: "inset(0 " + (100 - pos) + "% 0 0)" } },
+            React.createElement("img", { src: img, alt: "Prima", style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } })
+          ),
+          React.createElement("div", { style: { position: "absolute", top: 0, bottom: 0, left: pos + "%", width: 2, background: "rgba(201,168,76,.88)", transform: "translateX(-50%)", pointerEvents: "none", boxShadow: "0 0 14px rgba(201,168,76,.5)" } },
+            React.createElement("div", { style: { position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: 36, height: 36, background: "#c9a84c", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "#060a14", fontWeight: 700, boxShadow: "0 4px 20px rgba(0,0,0,.5)" } }, "\u21D4")
+          ),
+          React.createElement("button", {
+            onClick: () => setCompareMode(false),
+            title: "Torna al render",
+            style: { position: "absolute", top: 12, left: 12, width: 40, height: 40, background: "rgba(8,12,24,.86)", border: "1px solid rgba(201,168,76,.5)", color: "#c9a84c", borderRadius: 3, cursor: "pointer", fontSize: 17, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 5 }
+          }, "\u00D7"),
+          React.createElement("div", { style: { position: "absolute", top: 12, left: 60, background: "rgba(8,12,24,.72)", padding: "4px 12px", fontSize: 10, letterSpacing: ".2em", color: "rgba(232,220,200,.6)", textTransform: "uppercase", borderRadius: 2 } }, "Prima"),
+          React.createElement("div", { style: { position: "absolute", top: 12, right: 12, background: "rgba(201,168,76,.86)", padding: "4px 12px", fontSize: 10, letterSpacing: ".18em", color: "#060a14", textTransform: "uppercase", borderRadius: 2, fontWeight: 600 } }, style.label)
+        ),
+        React.createElement("div", { style: { display: "flex", justifyContent: "center", gap: 12, marginTop: 24, flexWrap: "wrap" } },
+          React.createElement("button", {
+            className: "pbtn",
+            onClick: downloadPDF,
+            disabled: pdfBusy || !resultB64
+          }, pdfBusy ? "Creazione PDF\u2026" : !resultB64 ? "Preparazione PDF\u2026" : "\u2193 Scarica PDF"),
+          React.createElement("a", {
+            href: result,
+            target: "_blank",
+            rel: "noopener noreferrer",
+            className: "olink"
+          }, "Apri render \u2197"),
+          React.createElement("button", {
+            className: "sbtn",
+            onClick: () => { setResult(null); setResultB64(null); setErr(null); }
+          }, "Nuovo Render")
+        )
+      )
+    ),
+    React.createElement("footer", null, "BAM Group \u00B7 Luxury Nautical AI \u00B7 Torino")
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(React.createElement(BAMYachtApp));
+</script>
+</body>
+</html>
