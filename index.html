@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<meta name="theme-color" content="#080c18">
+<meta name="theme-color" content="#1a2540">
 <title>BAM Yacht — AI Refit Studio</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Crimson+Text:wght@400;600&display=swap" rel="stylesheet">
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -12,7 +12,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{font-family:'Crimson Text',Georgia,serif;background:#080c18;color:#e8dcc8;min-height:100vh}
+body{font-family:'Crimson Text',Georgia,serif;background:#1a2540;color:#e8dcc8;min-height:100vh}
 .pill{background:transparent;border:1px solid rgba(201,168,76,.18);color:rgba(232,220,200,.5);padding:7px 18px;font-family:'Crimson Text',serif;font-size:14px;letter-spacing:.05em;cursor:pointer;border-radius:2px;transition:all .25s}
 .pill:hover{border-color:rgba(201,168,76,.45);color:rgba(201,168,76,.85)}
 .pill.on{background:rgba(201,168,76,.1);border-color:#c9a84c;color:#c9a84c}
@@ -41,13 +41,14 @@ body{font-family:'Crimson Text',Georgia,serif;background:#080c18;color:#e8dcc8;m
 .gear:hover{border-color:#c9a84c;color:#c9a84c}
 .gear.ok{border-color:rgba(80,200,120,.5);color:rgba(80,200,120,.85)}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);z-index:300;display:flex;align-items:center;justify-content:center;padding:24px;animation:fu .25s}
-.modal{background:linear-gradient(180deg,#0c1126,#080c18);border:1px solid rgba(201,168,76,.18);border-radius:4px;max-width:500px;width:100%;padding:36px}
+.modal{background:linear-gradient(180deg,#1c2c4a,#1a2540);border:1px solid rgba(201,168,76,.18);border-radius:4px;max-width:500px;width:100%;padding:36px}
 .inp{width:100%;background:rgba(0,0,0,.35);border:1px solid rgba(201,168,76,.18);color:#e8dcc8;padding:11px 14px;font-family:'Crimson Text',serif;font-size:14px;border-radius:2px;letter-spacing:.02em}
 .inp:focus{outline:none;border-color:#c9a84c}
-header{border-bottom:1px solid rgba(201,168,76,.09);padding:16px 20px;display:flex;align-items:center;justify-content:center;background:rgba(8,12,24,.93);backdrop-filter:blur(18px);position:sticky;top:0;z-index:200}
+header{border-bottom:1px solid rgba(201,168,76,.09);padding:16px 20px;display:flex;align-items:center;justify-content:center;background:rgba(26,37,64,.93);backdrop-filter:blur(18px);position:sticky;top:0;z-index:200}
 header img{height:90px;width:auto;object-fit:contain;display:block}
+@media (max-width:600px){header img{height:45px}header{padding:12px 14px}.badge{font-size:9px;padding:2px 8px;right:12px;letter-spacing:.18em}main{padding:32px 16px 60px}}
 .badge{position:absolute;right:20px;top:50%;transform:translateY(-50%);font-family:'Cormorant Garamond',serif;font-size:10px;color:rgba(201,168,76,.3);letter-spacing:.28em;text-transform:uppercase;border:1px solid rgba(201,168,76,.12);padding:3px 12px;border-radius:2px}
-main{max-width:840px;margin:0 auto;padding:48px 20px 80px;background:radial-gradient(ellipse 110% 55% at 50% 0%,rgba(201,168,76,.08) 0%,transparent 60%),linear-gradient(180deg,#080c18,#0b1020)}
+main{max-width:840px;margin:0 auto;padding:48px 20px 80px;background:radial-gradient(ellipse 110% 55% at 50% 0%,rgba(201,168,76,.1) 0%,transparent 60%),linear-gradient(180deg,#1a2540,#202d4a)}
 footer{border-top:1px solid rgba(201,168,76,.07);padding:24px 20px;text-align:center;font-size:10px;color:rgba(232,220,200,.12);letter-spacing:.2em;text-transform:uppercase;font-family:'Cormorant Garamond',serif}
 100%{opacity:1;transform:scale(1)}}</style>
 </head>
@@ -495,7 +496,7 @@ function BAMYachtApp() {
         title: "Impostazioni Replicate"
       }, "\u2699"),
       React.createElement("img", { src: LOGO_SRC, alt: "BAM Group" }),
-      React.createElement("span", { className: "badge" }, "v8.1 \u00B7 BETA")
+      React.createElement("span", { className: "badge" }, "v8.2 \u00B7 BETA")
     ),
     showSettings && React.createElement("div", {
       className: "modal-bg",
