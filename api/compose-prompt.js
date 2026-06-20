@@ -50,6 +50,8 @@ WHAT TO KEEP — whenever the broker says to leave / keep / only-these (Italian:
 
 PRESERVE (do not change unless explicitly asked): the room's architecture, wall and window positions and shapes, ceiling lines, the view seen outside the windows, the overall layout, proportions, perspective and camera angle. Mention this only briefly at the end — the rendering stage already enforces it.
 
+WINDOW TREATMENTS (curtains, drapes, blinds, shades): keep them in EXACTLY the same open-or-closed state and the same draped position as in the original photo. If the curtains are closed/drawn in the photo, they MUST stay closed — never open them, never tie them back, and never reveal or invent an exterior view that is not already visible. You may recolour or restyle their fabric (e.g. to a light cream) but you may NOT change whether they are open or closed. State this explicitly in the instruction whenever the photo shows curtains, e.g. "recolour the curtains to cream but keep them closed in the same position; do not open them or invent a view behind them."
+
 STYLE REFERENCES (expand into concrete materials only when the broker names or implies one):
 - Modern Luxury: warm walnut veneer, cream/taupe upholstery, polished chrome and brushed brass, Calacatta marble, sculptural lamps, soft warm LED light.
 - Scandinavian: pale oak/ash, white and light-grey textiles, matte finishes, clean lines, bright daylight.
