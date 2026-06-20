@@ -248,16 +248,31 @@ const STEPS = ["Analizzo la tua richiesta…", "Blocco le finestre e la vista es
 const PHASES = ["Analizzo la tua richiesta…", "Individuo le finestre e la vista esterna…", "Blocco le vetrate sulla vista originale…", "Blocco l'architettura e le geometrie…", "Cambio i colori delle pareti…", "Cambio il colore del pavimento…", "Aggiorno l'illuminazione…", "Ridisegno i divani e le poltrone…", "Ridisegno i tavolini…", "Aggiorno i tessuti e i materiali…", "Rifinitura finale dei dettagli…"];
 
 async function replicateCreate(endpoint, token, payload) {
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Authorization": "Token " + token, "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  if (res.status === 401) throw new Error("Token Replicate non valido. Verificalo in Impostazioni.");
-  if (res.status === 402) throw new Error("Credito Replicate esaurito.");
-  if (res.status === 429) throw new Error("Troppe richieste. Attendi qualche secondo.");
-  if (!res.ok) { const txt = await res.text(); throw new Error("Errore Replicate " + res.status + ": " + txt.slice(0, 220)); }
-  return res.json();
+  // Replicate puo rispondere 429 (troppe richieste insieme) o 503/502 (sovraccarico
+  // momentaneo), soprattutto quando partono molte chiamate in parallelo. In quel caso
+  // NON ci arrendiamo: aspettiamo un attimo e riproviamo, rispettando l'eventuale
+  // header Retry-After. Cosi la segmentazione e tutte le proposte vanno comunque a buon fine.
+  const MAX_RETRIES = 6;
+  let delay = 800;
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Authorization": "Token " + token, "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (res.status === 401) throw new Error("Token Replicate non valido. Verificalo in Impostazioni.");
+    if (res.status === 402) throw new Error("Credito Replicate esaurito.");
+    if ((res.status === 429 || res.status === 503 || res.status === 502) && attempt < MAX_RETRIES) {
+      const ra = parseFloat(res.headers.get("retry-after"));
+      const wait = (!isNaN(ra) && ra > 0) ? Math.min(ra * 1000, 8000) : delay;
+      await new Promise(r => setTimeout(r, wait));
+      delay = Math.min(Math.round(delay * 1.7), 8000);
+      continue;
+    }
+    if (res.status === 429) throw new Error("Troppe richieste. Attendi qualche secondo.");
+    if (!res.ok) { const txt = await res.text(); throw new Error("Errore Replicate " + res.status + ": " + txt.slice(0, 220)); }
+    return res.json();
+  }
 }
 
 async function replicatePoll(prediction, token, maxAttempts) {
@@ -266,7 +281,12 @@ async function replicatePoll(prediction, token, maxAttempts) {
     await new Promise(r => setTimeout(r, 2000));
     const pollPath = new URL(prediction.urls.get).pathname;
     const pollRes = await fetch(pollPath, { headers: { "Authorization": "Token " + token } });
-    if (!pollRes.ok) throw new Error("Errore nel monitoraggio dell'elaborazione");
+    if (!pollRes.ok) {
+      // Errori transitori durante il polling (429/503/5xx): non fallisco, aspetto e riprovo.
+      if (pollRes.status === 401 || pollRes.status === 402) throw new Error("Accesso Replicate non valido durante il monitoraggio.");
+      attempts++;
+      continue;
+    }
     prediction = await pollRes.json();
     attempts++;
   }
@@ -1028,7 +1048,7 @@ function BAMYachtApp() {
           React.createElement("span", { style: { fontSize: 12, color: "rgba(232,220,200,.2)" } }, compareMode ? "← trascina la riga →" : "tocca ⇔ per confrontare")
         ),
         lockStatus === "ok" && React.createElement("div", { style: { marginBottom: 14, background: "rgba(80,180,120,.08)", border: "1px solid rgba(80,180,120,.28)", borderRadius: 3, padding: "9px 16px", color: "#7fc8a0", fontSize: 12.5, letterSpacing: ".02em" } }, "Vetrate bloccate sulla vista originale \u2713"),
-        (lockStatus === "nowindows" || lockStatus === "fail") && React.createElement("div", { style: { marginBottom: 14, background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.32)", borderRadius: 3, padding: "9px 16px", color: "#d9bd6a", fontSize: 12.5, letterSpacing: ".02em", lineHeight: 1.5 } }, "\u26A0 Finestre non isolate in questo giro: la vista esterna pu\u00F2 essere cambiata. \u00C8 il passaggio da correggere \u2014 segnalami questo avviso."),
+        (lockStatus === "nowindows" || lockStatus === "fail") && React.createElement("div", { style: { marginBottom: 14, background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.32)", borderRadius: 3, padding: "9px 16px", color: "#d9bd6a", fontSize: 12.5, letterSpacing: ".02em", lineHeight: 1.5 } }, "Vetrate: in questo giro non ho applicato il blocco di sicurezza, ma di norma il modello mantiene comunque la vista originale. Dai un'occhiata che il panorama fuori sia quello giusto."),
         removeStatus === "ok" && React.createElement("div", { style: { marginBottom: 14, background: "rgba(80,180,120,.08)", border: "1px solid rgba(80,180,120,.28)", borderRadius: 3, padding: "9px 16px", color: "#7fc8a0", fontSize: 12.5, letterSpacing: ".02em" } }, removeList.length ? ("Rimozione eseguita: " + removeList.join(", ") + " \u2713") : "Richiesta rispettata \u2713"),
         removeStatus === "fail" && React.createElement("div", { style: { marginBottom: 14, background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.32)", borderRadius: 3, padding: "9px 16px", color: "#d9bd6a", fontSize: 12.5, letterSpacing: ".02em", lineHeight: 1.5 } }, "\u26A0 In questo giro non ho rispettato esattamente la richiesta: potrebbe aver tolto un pezzo di troppo o lasciato qualcosa che andava tolto. Rigenera, oppure indicami meglio quale pezzo \u00E8."),
         !compareMode ? React.createElement("div", { style: { position: "relative", borderRadius: 3, overflow: "hidden", aspectRatio: imgAspect, background: "#0b1020" } },
