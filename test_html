@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>BAM Vision — Test Composition Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --charcoal:#1a2540;
+    --charcoal-2:#222e4d;
+    --cream:#e8dcc8;
+    --cream-dim:#b9b09c;
+    --gold:#c9a84c;
+    --line:rgba(232,220,200,.14);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--charcoal); color:var(--cream);
+    font-family:'Crimson Text',Georgia,serif; font-size:18px; line-height:1.5;
+    -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:760px;margin:0 auto;padding:28px 20px 80px}
+  header{border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:26px}
+  .brand{font-family:'Cormorant Garamond',serif;font-weight:700;letter-spacing:.5px;font-size:34px;line-height:1.05;margin:0}
+  .tricolore{display:flex;width:120px;height:5px;margin:10px 0 8px;border-radius:2px;overflow:hidden}
+  .tricolore i{flex:1}
+  .tricolore i:nth-child(1){background:#0a8c45}
+  .tricolore i:nth-child(2){background:var(--cream)}
+  .tricolore i:nth-child(3){background:#ce2b37}
+  .sub{color:var(--cream-dim);font-size:16px;margin:6px 0 0}
+  label{display:block;font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:600;margin:22px 0 8px;color:var(--cream)}
+  textarea,select{
+    width:100%;background:var(--charcoal-2);color:var(--cream);
+    border:1px solid var(--line);border-radius:10px;padding:14px 14px;
+    font-family:'Crimson Text',serif;font-size:18px;
+  }
+  textarea{min-height:110px;resize:vertical}
+  .row{display:flex;gap:14px;flex-wrap:wrap}
+  .row > div{flex:1;min-width:220px}
+  button{
+    margin-top:24px;width:100%;background:var(--gold);color:#1a2540;border:none;
+    border-radius:10px;padding:16px;font-family:'Cormorant Garamond',serif;
+    font-weight:700;font-size:21px;letter-spacing:.5px;cursor:pointer;
+  }
+  button:disabled{opacity:.5}
+  .result{margin-top:30px;display:none}
+  .card{background:var(--charcoal-2);border:1px solid var(--line);border-radius:12px;padding:18px 18px;margin-bottom:16px}
+  .card h3{font-family:'Cormorant Garamond',serif;font-size:15px;letter-spacing:1.5px;text-transform:uppercase;color:var(--gold);margin:0 0 8px;font-weight:600}
+  .prompt-text{font-size:18px;line-height:1.55;color:#fff;white-space:pre-wrap;word-break:break-word}
+  .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+  .chip{background:rgba(201,168,76,.14);border:1px solid rgba(201,168,76,.4);color:var(--cream);border-radius:999px;padding:5px 12px;font-size:15px}
+  .kv{display:flex;gap:22px;flex-wrap:wrap}
+  .kv div span{display:block;color:var(--cream-dim);font-size:14px;text-transform:uppercase;letter-spacing:1px}
+  .kv div b{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:600}
+  .conf-high{color:#7fd190}.conf-medium{color:var(--gold)}.conf-low{color:#e08a8a}
+  .warn{color:#e0b07a;font-size:16px}
+  .copybtn{margin-top:10px;background:transparent;border:1px solid var(--gold);color:var(--gold);width:auto;padding:8px 16px;font-size:16px;border-radius:8px}
+  details{margin-top:8px}
+  summary{cursor:pointer;color:var(--cream-dim);font-size:15px}
+  pre{background:#11182b;border-radius:8px;padding:12px;overflow:auto;font-size:13px;color:#9fb0c8}
+  .err{color:#e08a8a}
+  .hint{color:var(--cream-dim);font-size:15px;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 class="brand">BAM&nbsp;VISION</h1>
+    <div class="tricolore"><i></i><i></i><i></i></div>
+    <p class="sub">Test Composition Engine — richiesta broker → prompt tecnico Flux</p>
+  </header>
+
+  <label for="req">Richiesta del broker (in italiano)</label>
+  <textarea id="req" placeholder="Es: Salone moderno e luxury, toni caldi, divani crema, lascia le finestre come sono"></textarea>
+  <p class="hint">Scrivi liberamente, come farebbe un broker. Il motore traduce in prompt tecnico.</p>
+
+  <div class="row">
+    <div>
+      <label for="room">Stanza (opzionale)</label>
+      <select id="room">
+        <option value="">— automatico —</option>
+        <option>main salon</option>
+        <option>master cabin</option>
+        <option>VIP cabin</option>
+        <option>guest cabin</option>
+        <option>galley</option>
+        <option>bathroom</option>
+        <option>dining area</option>
+      </select>
+    </div>
+    <div>
+      <label for="style">Preset stile (opzionale)</label>
+      <select id="style">
+        <option value="">— nessuno (testo libero) —</option>
+        <option>Modern Luxury</option>
+        <option>Scandinavian</option>
+        <option>Art Deco</option>
+        <option>Mediterraneo</option>
+        <option>Contemporary Dark</option>
+      </select>
+    </div>
+  </div>
+
+  <button id="go">Componi prompt</button>
+
+  <div class="result" id="result"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const goBtn = $("go");
+
+goBtn.addEventListener("click", async () => {
+  const userRequest = $("req").value.trim();
+  const room = $("room").value;
+  const stylePreset = $("style").value;
+  const result = $("result");
+
+  if (!userRequest && !stylePreset) {
+    result.style.display = "block";
+    result.innerHTML = '<div class="card"><p class="err">Scrivi una richiesta o scegli un preset.</p></div>';
+    return;
+  }
+
+  goBtn.disabled = true;
+  goBtn.textContent = "Sto componendo…";
+  result.style.display = "block";
+  result.innerHTML = '<div class="card"><p style="color:var(--cream-dim)">Chiamo il motore…</p></div>';
+
+  try {
+    const r = await fetch("/api/compose-prompt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userRequest, room, stylePreset })
+    });
+    const data = await r.json();
+
+    if (!data || (!data.prompt && data.error)) {
+      result.innerHTML = '<div class="card"><h3>Errore</h3><p class="err">' +
+        (data.error || "Risposta non valida") + '</p></div>';
+      return;
+    }
+
+    const mats = Array.isArray(data.materials) && data.materials.length
+      ? data.materials.map(m => '<span class="chip">' + escapeHtml(m) + '</span>').join("")
+      : '<span style="color:var(--cream-dim)">—</span>';
+
+    const confClass = "conf-" + (data.confidence || "medium");
+
+    let html = "";
+    html += '<div class="card"><h3>Prompt tecnico (per Flux)</h3>' +
+            '<div class="prompt-text" id="promptText">' + escapeHtml(data.prompt || "") + '</div>' +
+            '<button class="copybtn" onclick="copyPrompt()">Copia prompt</button></div>';
+
+    html += '<div class="card"><div class="kv">' +
+            '<div><span>Stanza</span><b>' + escapeHtml(data.room || "—") + '</b></div>' +
+            '<div><span>Stile</span><b>' + escapeHtml(data.style_label || "—") + '</b></div>' +
+            '<div><span>Affidabilità</span><b class="' + confClass + '">' + escapeHtml(data.confidence || "—") + '</b></div>' +
+            '</div></div>';
+
+    html += '<div class="card"><h3>Materiali / palette (per il PDF)</h3><div class="meta">' + mats + '</div></div>';
+
+    if (data.clarification) {
+      html += '<div class="card"><h3>Il motore chiede</h3><p class="warn">' + escapeHtml(data.clarification) + '</p></div>';
+    }
+    if (data.warning) {
+      html += '<div class="card"><h3>Avviso</h3><p class="warn">' + escapeHtml(data.warning) + '</p></div>';
+    }
+
+    html += '<div class="card"><h3>Negative prompt</h3><div class="prompt-text" style="font-size:16px;color:var(--cream-dim)">' +
+            escapeHtml(data.negative_prompt || "—") + '</div></div>';
+
+    html += '<details><summary>Mostra risposta completa (JSON)</summary><pre>' +
+            escapeHtml(JSON.stringify(data, null, 2)) + '</pre></details>';
+
+    result.innerHTML = html;
+  } catch (err) {
+    result.innerHTML = '<div class="card"><h3>Errore di rete</h3><p class="err">' +
+      escapeHtml(err && err.message ? err.message : String(err)) + '</p></div>';
+  } finally {
+    goBtn.disabled = false;
+    goBtn.textContent = "Componi prompt";
+  }
+});
+
+function copyPrompt(){
+  const t = document.getElementById("promptText");
+  if(!t) return;
+  navigator.clipboard.writeText(t.textContent).then(()=>{
+    const b = event.target; const old = b.textContent;
+    b.textContent = "Copiato ✓"; setTimeout(()=>b.textContent=old,1500);
+  });
+}
+
+function escapeHtml(s){
+  return String(s)
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
+</script>
+</body>
+</html>
