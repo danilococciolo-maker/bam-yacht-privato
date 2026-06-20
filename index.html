@@ -553,9 +553,10 @@ function BAMYachtApp() {
       }
       setStyleLabel(label);
 
-      // STEP 1 — Individuo finestre e vista esterna (maschera per il lucchetto)
+      // STEP 1+2 IN PARALLELO — avvio la maschera-finestre SENZA bloccare:
+      // gira in sottofondo mentre genero le proposte, cosi la segmentazione lenta
+      // non rallenta piu il risultato. La maschera viene attesa solo alla fine.
       setStep(1);
-      let windowMaskUrl = null;
       async function segment(maskPrompt) {
         const segModelRes = await fetch(SEG_MODEL_ENDPOINT, { headers: { "Authorization": "Token " + token } });
         if (!segModelRes.ok) return null;
@@ -576,12 +577,16 @@ function BAMYachtApp() {
         }
         return typeof segOut === "string" ? segOut : null;
       }
-      try {
-        windowMaskUrl = await segment(WINDOW_MASK_PROMPT);
-        if (!windowMaskUrl) windowMaskUrl = await segment("window");
-      } catch (_) { windowMaskUrl = null; }
+      const maskPromise = (async () => {
+        try {
+          let m = await segment(WINDOW_MASK_PROMPT);
+          if (!m) m = await segment("window");
+          return m;
+        } catch (_) { return null; }
+      })();
 
       // STEP 2 — Genero piu proposte con Nano Banana Pro (in parallelo), fallback su Nano Banana
+      // Parte SUBITO, mentre la maschera-finestre sta ancora girando in sottofondo.
       setStep(2);
       const editPrompt = "Photorealistic refit of THIS exact yacht interior shown in the image. ABSOLUTE RULES, in order of priority: (1) Keep the room architecture, walls, ceiling, every window and porthole, the exact view seen OUTSIDE through the windows, and the camera viewpoint and perspective IDENTICAL to the original photo. (2) Do NOT empty or simplify the room and do NOT redesign it from scratch: every sofa, armchair, chair, table and lamp that exists in the original must still be present and in the same position in the result, UNLESS the user explicitly asks to remove or move that specific piece. (3) Carry out EVERY change the user lists below as a MANDATORY instruction, not an optional suggestion. In particular: if the user asks to REMOVE a specific item, that item MUST be completely absent from the result (replace the area with floor/empty space that matches the room) and every OTHER piece stays; if the user asks to MOVE or ROTATE a piece, reposition that piece accordingly while keeping the rest; if the user asks to ADD, SWAP or MODERNISE something (e.g. lamps), do exactly that. Make only the changes the user lists, nothing more. Restyle the pieces that stay (colours, fabrics, materials, finishes, lighting) as described. The room must remain fully furnished, lived-in and realistic - never a bare empty room. User's requested changes: " + styleClause + ". The result must be a believable, fully-furnished luxury yacht interior, professional architectural photography, ultra detailed.";
       async function runEdit(endpoint) {
@@ -596,8 +601,11 @@ function BAMYachtApp() {
       let variants = (await Promise.all(samplePromises)).filter(Boolean);
       if (!variants.length) throw new Error("Nessuna proposta generata. Riprova tra poco.");
 
-      // STEP 3 — Lucchetto vetrate su ogni proposta + giudice AI sceglie la migliore
+      // STEP 3 — Ora che le proposte sono pronte, recupero la maschera-finestre
+      // (quasi sempre gia pronta perche girava in parallelo) e applico il lucchetto.
       setStep(3);
+      let windowMaskUrl = null;
+      try { windowMaskUrl = await maskPromise; } catch (_) { windowMaskUrl = null; }
       if (windowMaskUrl) {
         const locked = [];
         let applied = 0;
