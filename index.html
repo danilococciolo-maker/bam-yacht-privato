@@ -206,8 +206,9 @@ footer{border-top:1px solid rgba(201,168,76,.07);padding:24px 20px;text-align:ce
 <script type="text/babel" data-presets="env,react">
 const { useState, useRef, useCallback, useEffect } = React;
 
-const GEOMETRY_LOCK = "CRITICAL: this is a STYLE REFIT of the EXACT yacht interior room shown in the input image - first ANALYZE the input image to identify the room type (salon, dining room, galley/kitchen, master cabin, VIP cabin, guest cabin, bathroom/head, corridor, study, gym, or any other room type) and ALL its existing elements, then preserve them exactly. You MUST preserve: the IDENTICAL room geometry, the same wall positions, the same window/porthole positions, shapes and sizes (every window must remain TRANSPARENT GLASS showing OUTDOOR OCEAN AND SKY - never paint over windows, never replace with art or panels, never change window shape or size), the same FUNCTION of the room (NEVER change what the room is used for: if it has a bed it stays a bedroom with the bed in identical position, if it has sofas it stays a salon with sofas, if it has a dining table it stays a dining room, if it has a kitchen counter and appliances it stays a galley, if it has a bathtub/toilet/sink it stays a bathroom), the same furniture pieces and their exact positions (never remove furniture, never add new pieces that were not there, never swap one piece for another type - restyle existing pieces but keep them as the same type and position), the same doors and openings, the same camera viewpoint and perspective, the same spatial structure. The interior walls remain SOLID interior walls - never replace with open terraces, balconies, or sea-facing openings that were not in the original.";
-const STYLE_CONNECTOR = " Only restyle materials, finishes, upholstery, colors, surfaces, and lighting in ";
+const GEOMETRY_LOCK = "CRITICAL: this is a refit of the EXACT yacht interior room shown in the input image. First ANALYZE the input image to identify the room type (salon, dining room, galley/kitchen, master cabin, VIP cabin, guest cabin, bathroom/head, corridor, study, gym, or any other room type). The following ARCHITECTURE must stay STRICTLY IDENTICAL to the input image and must NEVER be altered: the room geometry and proportions, all wall positions, the ceiling structure, all doors and structural openings, the camera viewpoint and perspective, and EVERY window and porthole - keep each window and porthole in the exact same position, shape and size, as TRANSPARENT GLASS, never paint over them, never cover them with art or panels, never change their shape or size. The OUTDOOR VIEW seen through every window and porthole must remain EXACTLY as in the input image: same scene, same colors, same light. If the input shows a harbour, marina, dock, buildings or other boats, keep that exact view - do NOT invent or replace it with open ocean or empty sky. Interior walls stay solid interior walls - never replace them with terraces, balconies or new sea-facing openings. The room keeps its FUNCTION (a cabin stays a cabin, a salon stays a salon, a galley stays a galley, a bathroom stays a bathroom).";
+const FURNITURE_FREEDOM = " The FURNITURE and decor of the interior CAN and SHOULD be changed exactly as the refit brief describes. You are explicitly allowed to: re-upholster and recolor pieces, change their materials and finishes, AND ALSO change a piece into a different modern type, replace one piece with another, rearrange the layout, move pieces to new positions, add new pieces, or remove pieces (for example: remove one of several sofas, replace classic coffee tables with modern steel ones, change the seating arrangement). Apply these furniture changes confidently while keeping the architecture and the outdoor views above perfectly identical.";
+const STYLE_CONNECTOR = " Refit brief to apply to the interior furniture, materials, finishes and lighting: ";
 const QUALITY_SUFFIX = " Photorealistic professional architectural photography, magazine quality, ultra detailed 8K masterpiece.";
 
 const ROOMS = [
@@ -399,12 +400,12 @@ function BAMYachtApp() {
         }
         const mats = Array.isArray(composed.materials) ? composed.materials.filter(Boolean) : [];
         if (mats.length) {
-          styleClause = label + " style: " + mats.join(", ");
+          styleClause = refitText.trim() + ". " + label + " palette and materials: " + mats.join(", ");
         }
       }
       setStyleLabel(label);
 
-      const promptText = GEOMETRY_LOCK + STYLE_CONNECTOR + styleClause + "." + QUALITY_SUFFIX;
+      const promptText = GEOMETRY_LOCK + FURNITURE_FREEDOM + STYLE_CONNECTOR + styleClause + "." + QUALITY_SUFFIX;
       setStep(1);
       const startRes = await fetch(MODEL_ENDPOINT, {
         method: "POST",
