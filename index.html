@@ -607,24 +607,24 @@ function BAMYachtApp() {
       let windowMaskUrl = null;
       try { windowMaskUrl = await maskPromise; } catch (_) { windowMaskUrl = null; }
       if (windowMaskUrl) {
-        const locked = [];
-        let applied = 0;
-        for (const v of variants) {
+        // Applico il lucchetto a TUTTE le proposte in parallelo, non una alla volta.
+        const lockResults = await Promise.all(variants.map(async (v) => {
           try {
             const out = await compositeWindows(v, img, windowMaskUrl);
-            if (out && out !== v) applied++;
-            locked.push(out);
-          } catch (_) { locked.push(v); }
-        }
-        variants = locked;
+            return { out: out, applied: !!(out && out !== v) };
+          } catch (_) { return { out: v, applied: false }; }
+        }));
+        variants = lockResults.map(r => r.out);
+        const applied = lockResults.filter(r => r.applied).length;
         setLockStatus(applied > 0 ? "ok" : "fail");
       } else {
         setLockStatus("nowindows");
       }
       let baseOutputUrl = variants[0];
       try {
-        const scored = [];
-        for (const v of variants) { scored.push({ v: v, s: await judgeVariant(v, refitText.trim(), token) }); }
+        // Faccio valutare TUTTE le proposte insieme, non una alla volta: qui
+        // si recuperano ~60 secondi (prima il giudice girava in sequenza).
+        const scored = await Promise.all(variants.map(async (v) => ({ v: v, s: await judgeVariant(v, refitText.trim(), token) })));
         scored.sort((a, b) => b.s - a.s);
         baseOutputUrl = scored[0].v;
       } catch (_) { baseOutputUrl = variants[0]; }
