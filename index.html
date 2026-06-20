@@ -206,6 +206,10 @@ footer{border-top:1px solid rgba(201,168,76,.07);padding:24px 20px;text-align:ce
 <script type="text/babel" data-presets="env,react">
 const { useState, useRef, useCallback, useEffect } = React;
 
+// Account "admin" che vedono gli avvisi tecnici (semafori) dentro l'app.
+// I broker/clienti normali NON li vedono: per loro l'app resta pulita.
+const ADMIN_EMAILS = ["danilo.cocciolo@gmail.com"];
+
 const GEOMETRY_LOCK = "CRITICAL: this is a refit of the EXACT yacht interior room shown in the input image. First ANALYZE the input image to identify the room type (salon, dining room, galley/kitchen, master cabin, VIP cabin, guest cabin, bathroom/head, corridor, study, gym, or any other room type). The following ARCHITECTURE must stay STRICTLY IDENTICAL to the input image and must NEVER be altered: the room geometry and proportions, all wall positions, the ceiling structure, all doors and structural openings, the camera viewpoint and perspective, and EVERY window and porthole - keep each window and porthole in the exact same position, shape and size, as TRANSPARENT GLASS, never paint over them, never cover them with art or panels, never change their shape or size. The OUTDOOR VIEW seen through every window and porthole must remain EXACTLY as in the input image: same scene, same colors, same light. If the input shows a harbour, marina, dock, buildings or other boats, keep that exact view - do NOT invent or replace it with open ocean or empty sky. Interior walls stay solid interior walls - never replace them with terraces, balconies or new sea-facing openings. The room keeps its FUNCTION (a cabin stays a cabin, a salon stays a salon, a galley stays a galley, a bathroom stays a bathroom).";
 const FURNITURE_FREEDOM = " The FURNITURE and decor of the interior CAN and SHOULD be changed exactly as the refit brief describes. You are explicitly allowed to: re-upholster and recolor pieces, change their materials and finishes, AND ALSO change a piece into a different modern type, replace one piece with another, rearrange the layout, move pieces to new positions, add new pieces, or remove pieces (for example: remove one of several sofas, replace classic coffee tables with modern steel ones, change the seating arrangement). Apply these furniture changes confidently while keeping the architecture and the outdoor views above perfectly identical.";
 const STYLE_CONNECTOR = " Refit brief to apply to the interior furniture, materials, finishes and lighting: ";
@@ -470,6 +474,8 @@ function BAMYachtApp() {
   const [compareMode, setCompareMode] = useState(false);
   const [yacht, setYacht] = useState({ cantiere: "", modello: "", anno: "", oreMotore: "", manutenzione: "" });
   const [tick, setTick] = useState(0);
+  const [userEmail, setUserEmail] = useState("");
+  const isAdmin = ADMIN_EMAILS.indexOf((userEmail || "").trim().toLowerCase()) !== -1;
   const updateYacht = (k, v) => setYacht(prev => Object.assign({}, prev, { [k]: v }));
   const fileRef = useRef();
   const sliderRef = useRef();
@@ -479,6 +485,20 @@ function BAMYachtApp() {
       const t = localStorage.getItem("bam_replicate_token");
       if (t) { setToken(t); setTokenInput(t); }
     } catch (_) {}
+  }, []);
+
+  // Recupero l'email dell'utente loggato per capire se mostrare i semafori (solo admin).
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        if (!window.supabaseClient) return;
+        const { data } = await window.supabaseClient.auth.getSession();
+        const em = data && data.session && data.session.user ? (data.session.user.email || "") : "";
+        if (active) setUserEmail(em);
+      } catch (_) {}
+    })();
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -1066,11 +1086,11 @@ function BAMYachtApp() {
           ),
           React.createElement("span", { style: { fontSize: 12, color: "rgba(232,220,200,.2)" } }, compareMode ? "← trascina la riga →" : "tocca ⇔ per confrontare")
         ),
-        lockStatus === "ok" && React.createElement("div", { style: { marginBottom: 14, background: "rgba(80,180,120,.08)", border: "1px solid rgba(80,180,120,.28)", borderRadius: 3, padding: "9px 16px", color: "#7fc8a0", fontSize: 12.5, letterSpacing: ".02em" } }, "Vetrate bloccate sulla vista originale \u2713"),
-        (lockStatus === "nowindows" || lockStatus === "fail") && React.createElement("div", { style: { marginBottom: 14, background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.32)", borderRadius: 3, padding: "9px 16px", color: "#d9bd6a", fontSize: 12.5, letterSpacing: ".02em", lineHeight: 1.5 } }, "Vetrate: in questo giro non ho applicato il blocco di sicurezza, ma di norma il modello mantiene comunque la vista originale. Dai un'occhiata che il panorama fuori sia quello giusto."),
-        removeStatus === "ok" && React.createElement("div", { style: { marginBottom: 14, background: "rgba(80,180,120,.08)", border: "1px solid rgba(80,180,120,.28)", borderRadius: 3, padding: "9px 16px", color: "#7fc8a0", fontSize: 12.5, letterSpacing: ".02em" } }, removeList.length ? ("Rimozione eseguita: " + removeList.join(", ") + " \u2713") : "Richiesta rispettata \u2713"),
-        removeStatus === "fail" && React.createElement("div", { style: { marginBottom: 14, background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.32)", borderRadius: 3, padding: "9px 16px", color: "#d9bd6a", fontSize: 12.5, letterSpacing: ".02em", lineHeight: 1.5 } }, "\u26A0 In questo giro non ho rispettato esattamente la richiesta: potrebbe aver tolto un pezzo di troppo o lasciato qualcosa che andava tolto. Rigenera, oppure indicami meglio quale pezzo \u00E8."),
-        upscaling && React.createElement("div", { style: { marginBottom: 14, color: "rgba(232,220,200,.45)", fontSize: 12, letterSpacing: ".03em", fontStyle: "italic" } }, "Alta risoluzione in preparazione in sottofondo\u2026 il render \u00E8 gi\u00E0 pronto da vedere e scaricare."),
+        isAdmin && lockStatus === "ok" && React.createElement("div", { style: { marginBottom: 14, background: "rgba(80,180,120,.08)", border: "1px solid rgba(80,180,120,.28)", borderRadius: 3, padding: "9px 16px", color: "#7fc8a0", fontSize: 12.5, letterSpacing: ".02em" } }, "Vetrate bloccate sulla vista originale \u2713"),
+        isAdmin && (lockStatus === "nowindows" || lockStatus === "fail") && React.createElement("div", { style: { marginBottom: 14, background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.32)", borderRadius: 3, padding: "9px 16px", color: "#d9bd6a", fontSize: 12.5, letterSpacing: ".02em", lineHeight: 1.5 } }, "Vetrate: in questo giro non ho applicato il blocco di sicurezza, ma di norma il modello mantiene comunque la vista originale. Dai un'occhiata che il panorama fuori sia quello giusto."),
+        isAdmin && removeStatus === "ok" && React.createElement("div", { style: { marginBottom: 14, background: "rgba(80,180,120,.08)", border: "1px solid rgba(80,180,120,.28)", borderRadius: 3, padding: "9px 16px", color: "#7fc8a0", fontSize: 12.5, letterSpacing: ".02em" } }, removeList.length ? ("Rimozione eseguita: " + removeList.join(", ") + " \u2713") : "Richiesta rispettata \u2713"),
+        isAdmin && removeStatus === "fail" && React.createElement("div", { style: { marginBottom: 14, background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.32)", borderRadius: 3, padding: "9px 16px", color: "#d9bd6a", fontSize: 12.5, letterSpacing: ".02em", lineHeight: 1.5 } }, "\u26A0 In questo giro non ho rispettato esattamente la richiesta: potrebbe aver tolto un pezzo di troppo o lasciato qualcosa che andava tolto. Rigenera, oppure indicami meglio quale pezzo \u00E8."),
+        isAdmin && upscaling && React.createElement("div", { style: { marginBottom: 14, color: "rgba(232,220,200,.45)", fontSize: 12, letterSpacing: ".03em", fontStyle: "italic" } }, "Alta risoluzione in preparazione in sottofondo\u2026 il render \u00E8 gi\u00E0 pronto da vedere e scaricare."),
         !compareMode ? React.createElement("div", { style: { position: "relative", borderRadius: 3, overflow: "hidden", aspectRatio: imgAspect, background: "#0b1020" } },
           React.createElement("img", { src: result, alt: "Dopo", crossOrigin: "anonymous", style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } }),
           React.createElement("button", { onClick: () => setCompareMode(true), title: "Confronta prima / dopo", style: { position: "absolute", top: 12, left: 12, width: 40, height: 40, background: "rgba(8,12,24,.86)", border: "1px solid rgba(201,168,76,.5)", color: "#c9a84c", borderRadius: 3, cursor: "pointer", fontSize: 17, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" } }, "\u21D4"),
