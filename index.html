@@ -365,16 +365,44 @@ function compositeWindows(renderUrl, refDataUri, maskUrl) {
 }
 
 // Giudice AI: dà un voto 0-100 a una proposta. Best effort: in caso di errore torna 50.
-async function judgeVariant(variantUrl, userRequest, token) {
+async function judgeVariant(variantUrl, userRequest, removeList, token) {
+  const hasRemoval = Array.isArray(removeList) && removeList.length > 0;
   try {
-    const jp = "You are a strict art director reviewing an AI yacht-interior refit render. The broker asked for: \"" + userRequest + "\". Score THIS image from 0 to 100. The MOST important factor: did it actually carry out the broker's explicit instructions - especially any request to REMOVE, MOVE or ROTATE a specific piece of furniture? If the broker asked to remove an item and it is still present, or asked to move it and it did not move, heavily penalise the score. Then also weigh realism, absence of artifacts or deformed furniture, believable yacht architecture, and that the room is still fully furnished. Reply with ONLY one integer between 0 and 100, nothing else.";
+    let jp;
+    if (hasRemoval) {
+      jp = "You are a strict art director checking an AI yacht-interior refit render against the broker's request: \"" + userRequest + "\". The broker explicitly asked to REMOVE these item(s) from the room: " + removeList.join("; ") + ". Look carefully: are those item(s) now completely ABSENT from the image? Then also judge realism, absence of artifacts or deformed furniture, believable yacht architecture, and that the room is still fully furnished and on-brief. Reply with ONLY a compact JSON object and nothing else, in this exact form: {\"removed_absent\": true or false, \"score\": integer 0-100}. removed_absent must be true ONLY if every listed item is genuinely gone.";
+    } else {
+      jp = "You are a strict art director reviewing an AI yacht-interior refit render. The broker asked for: \"" + userRequest + "\". Score THIS image from 0 to 100, weighing whether it carried out the broker's explicit instructions, realism, absence of artifacts or deformed furniture, believable yacht architecture, and that the room is still fully furnished. Reply with ONLY one integer between 0 and 100, nothing else.";
+    }
     let pred = await replicateCreate(JUDGE_ENDPOINT, token, { input: { prompt: jp, image_input: [variantUrl] } });
     pred = await replicatePoll(pred, token, 40);
     let out = pred.output;
     if (Array.isArray(out)) out = out.join(" ");
-    const m = String(out == null ? "" : out).match(/\d{1,3}/);
-    return m ? Math.min(100, parseInt(m[0], 10)) : 50;
-  } catch (_) { return 50; }
+    out = String(out == null ? "" : out);
+    if (hasRemoval) {
+      let removalOk = false;
+      let score = 50;
+      try {
+        const s = out.indexOf("{"), e = out.lastIndexOf("}");
+        if (s !== -1 && e !== -1 && e > s) {
+          const j = JSON.parse(out.slice(s, e + 1));
+          removalOk = j.removed_absent === true || String(j.removed_absent).toLowerCase() === "true";
+          const sc = parseInt(j.score, 10);
+          if (!isNaN(sc)) score = Math.min(100, sc);
+        }
+      } catch (_) {
+        // fallback grezzo: se il giudice non torna JSON, deduco dal testo
+        removalOk = /\btrue\b/i.test(out) && !/\bfalse\b/i.test(out);
+        const m = out.match(/\d{1,3}/);
+        if (m) score = Math.min(100, parseInt(m[0], 10));
+      }
+      // una rimozione fallita non puo vincere: abbatto il voto
+      if (!removalOk) score = Math.min(score, 15);
+      return { score: score, removalOk: removalOk };
+    }
+    const m = out.match(/\d{1,3}/);
+    return { score: m ? Math.min(100, parseInt(m[0], 10)) : 50, removalOk: true };
+  } catch (_) { return { score: 50, removalOk: !hasRemoval }; }
 }
 
 function BAMLogo() {
@@ -391,6 +419,8 @@ function BAMYachtApp() {
   const [clarify, setClarify] = useState(null);
   const [styleLabel, setStyleLabel] = useState("Refit personalizzato");
   const [lockStatus, setLockStatus] = useState(null);
+  const [removeStatus, setRemoveStatus] = useState(null);
+  const [removeList, setRemoveList] = useState([]);
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState(0);
   const [err, setErr] = useState(null);
@@ -518,7 +548,7 @@ function BAMYachtApp() {
     if (!img || busy) return;
     if (!token) { setShowSettings(true); return; }
     if (!refitText.trim()) { setErr("Descrivi il refit che desideri."); return; }
-    setBusy(true); setResult(null); setResultB64(null); setErr(null); setClarify(null); setStep(0); setLockStatus(null);
+    setBusy(true); setResult(null); setResultB64(null); setErr(null); setClarify(null); setStep(0); setLockStatus(null); setRemoveStatus(null); setRemoveList([]);
     try {
       // 1) Motore di composizione: traduce la richiesta del broker in stile + materiali
       let composed = null;
@@ -538,6 +568,7 @@ function BAMYachtApp() {
       // Costruisco l'istruzione da iniettare nello scaffold geometry-lock
       let label = "Refit personalizzato";
       let styleClause = refitText.trim();
+      let removals = [];
       if (composed && composed.ok) {
         label = composed.style_label || label;
         // Gate qualità in ingresso: se la richiesta è troppo vaga, chiedo dettagli e non genero
@@ -550,7 +581,12 @@ function BAMYachtApp() {
         if (composed.prompt && String(composed.prompt).trim()) {
           styleClause = String(composed.prompt).trim();
         }
+        // Oggetti da togliere: lista esplicita per il passaggio dedicato + controllo finale.
+        if (Array.isArray(composed.remove)) {
+          removals = composed.remove.map(s => String(s).trim()).filter(Boolean);
+        }
       }
+      setRemoveList(removals);
       setStyleLabel(label);
 
       // STEP 1+2 IN PARALLELO — avvio la maschera-finestre SENZA bloccare:
@@ -585,20 +621,41 @@ function BAMYachtApp() {
         } catch (_) { return null; }
       })();
 
-      // STEP 2 — Genero piu proposte con Nano Banana Pro (in parallelo), fallback su Nano Banana
-      // Parte SUBITO, mentre la maschera-finestre sta ancora girando in sottofondo.
+      // STEP 2 — Genero piu proposte. Parte SUBITO, mentre la maschera-finestre
+      // gira ancora in sottofondo.
       setStep(2);
-      const editPrompt = "Photorealistic refit of THIS exact yacht interior shown in the image. ABSOLUTE RULES, in order of priority: (1) Keep the room architecture, walls, ceiling, every window and porthole, the exact view seen OUTSIDE through the windows, and the camera viewpoint and perspective IDENTICAL to the original photo. (2) Do NOT empty or simplify the room and do NOT redesign it from scratch: every sofa, armchair, chair, table and lamp that exists in the original must still be present and in the same position in the result, UNLESS the user explicitly asks to remove or move that specific piece. (3) Carry out EVERY change the user lists below as a MANDATORY instruction, not an optional suggestion. In particular: if the user asks to REMOVE a specific item, that item MUST be completely absent from the result (replace the area with floor/empty space that matches the room) and every OTHER piece stays; if the user asks to MOVE or ROTATE a piece, reposition that piece accordingly while keeping the rest; if the user asks to ADD, SWAP or MODERNISE something (e.g. lamps), do exactly that. Make only the changes the user lists, nothing more. Restyle the pieces that stay (colours, fabrics, materials, finishes, lighting) as described. The room must remain fully furnished, lived-in and realistic - never a bare empty room. User's requested changes: " + styleClause + ". The result must be a believable, fully-furnished luxury yacht interior, professional architectural photography, ultra detailed.";
-      async function runEdit(endpoint) {
-        let p = await replicateCreate(endpoint, token, { input: { prompt: editPrompt, image_input: [img] } });
+      const alreadyGone = removals.length
+        ? " The following item(s) have ALREADY been removed from this photo and MUST stay completely absent - do not bring them back under any circumstance: " + removals.join("; ") + "."
+        : "";
+      const editPrompt = "Photorealistic refit of THIS exact yacht interior shown in the image. ABSOLUTE RULES, in order of priority: (1) Keep the room architecture, walls, ceiling, every window and porthole, the exact view seen OUTSIDE through the windows, and the camera viewpoint and perspective IDENTICAL to the original photo. (2) Do NOT empty or simplify the room and do NOT redesign it from scratch: every sofa, armchair, chair, table and lamp that exists in the image must still be present and in the same position in the result, UNLESS the user explicitly asks to remove or move that specific piece. (3) Carry out EVERY change the user lists below as a MANDATORY instruction, not an optional suggestion. In particular: if the user asks to REMOVE a specific item, that item MUST be completely absent from the result (replace the area with floor/empty space that matches the room) and every OTHER piece stays; if the user asks to MOVE or ROTATE a piece, reposition that piece accordingly while keeping the rest; if the user asks to ADD, SWAP or MODERNISE something (e.g. lamps), do exactly that. Make only the changes the user lists, nothing more. Restyle the pieces that stay (colours, fabrics, materials, finishes, lighting) as described. The room must remain fully furnished, lived-in and realistic - never a bare empty room." + alreadyGone + " User's requested changes: " + styleClause + ". The result must be a believable, fully-furnished luxury yacht interior, professional architectural photography, ultra detailed.";
+
+      // runEdit generico: stesso modello, ma prompt e immagine di partenza variabili.
+      async function runEdit(endpoint, prompt, baseImage) {
+        let p = await replicateCreate(endpoint, token, { input: { prompt: prompt, image_input: [baseImage] } });
         p = await replicatePoll(p, token, 90);
         return Array.isArray(p.output) ? p.output[0] : p.output;
       }
-      const samplePromises = [];
-      for (let i = 0; i < N_SAMPLES; i++) {
-        samplePromises.push(runEdit(EDIT_ENDPOINT).catch(() => runEdit(EDIT_FALLBACK_ENDPOINT)).catch(() => null));
+      // una proposta = prova il modello principale, poi il fallback, poi null.
+      function runSample(prompt, baseImage) {
+        return runEdit(EDIT_ENDPOINT, prompt, baseImage)
+          .catch(() => runEdit(EDIT_FALLBACK_ENDPOINT, prompt, baseImage))
+          .catch(() => null);
       }
-      let variants = (await Promise.all(samplePromises)).filter(Boolean);
+
+      let variants;
+      if (removals.length) {
+        // PASSAGGIO 1 — RIMOZIONE DEDICATA: unico compito = togliere gli oggetti.
+        // Con un'istruzione sola e mirata il modello obbedisce quasi sempre.
+        const removalInstruction = "From this exact yacht interior photo, COMPLETELY REMOVE the following item(s) so they are no longer visible at all: " + removals.join("; ") + ". Erase them entirely and rebuild the space they occupied as believable empty floor and the part of the room behind them, matching the existing floor, perspective, shadows and lighting. Do NOT restyle, recolour, move, rotate or add anything else: every OTHER piece of furniture, the walls, ceiling, windows, the outside view and the camera angle must stay EXACTLY as in the original. Photorealistic and seamless, as if those item(s) had never been there.";
+        const cleared = await Promise.all(Array.from({ length: N_SAMPLES }, () => runSample(removalInstruction, img)));
+        // se una rimozione fallisce, ripiego sull'originale per quella proposta
+        const bases = cleared.map(c => c || img);
+        // PASSAGGIO 2 — RISTILIZZO sopra l'immagine gia ripulita (in parallelo).
+        variants = (await Promise.all(bases.map(b => runSample(editPrompt, b)))).filter(Boolean);
+      } else {
+        // Nessuna rimozione: un solo passaggio, 4 proposte in parallelo.
+        variants = (await Promise.all(Array.from({ length: N_SAMPLES }, () => runSample(editPrompt, img)))).filter(Boolean);
+      }
       if (!variants.length) throw new Error("Nessuna proposta generata. Riprova tra poco.");
 
       // STEP 3 — Ora che le proposte sono pronte, recupero la maschera-finestre
@@ -622,11 +679,19 @@ function BAMYachtApp() {
       }
       let baseOutputUrl = variants[0];
       try {
-        // Faccio valutare TUTTE le proposte insieme, non una alla volta: qui
-        // si recuperano ~60 secondi (prima il giudice girava in sequenza).
-        const scored = await Promise.all(variants.map(async (v) => ({ v: v, s: await judgeVariant(v, refitText.trim(), token) })));
-        scored.sort((a, b) => b.s - a.s);
+        // Valuto TUTTE le proposte insieme (parallelo). Quando c'e una rimozione,
+        // il giudice dice anche se l'oggetto e davvero sparito.
+        const scored = await Promise.all(variants.map(async (v) => {
+          const j = await judgeVariant(v, refitText.trim(), removals, token);
+          return { v: v, s: j.score, removalOk: j.removalOk };
+        }));
+        // Prima le proposte che hanno OBBEDITO alla rimozione, poi per voto.
+        scored.sort((a, b) => ((b.removalOk ? 1 : 0) - (a.removalOk ? 1 : 0)) || (b.s - a.s));
         baseOutputUrl = scored[0].v;
+        // Rete di sicurezza: se era richiesta una rimozione, segnalo l'esito onesto.
+        if (removals.length) {
+          setRemoveStatus(scored.some(x => x.removalOk) ? "ok" : "fail");
+        }
       } catch (_) { baseOutputUrl = variants[0]; }
 
       if (!baseOutputUrl) throw new Error("Nessun output dal modello");
@@ -950,6 +1015,8 @@ function BAMYachtApp() {
         ),
         lockStatus === "ok" && React.createElement("div", { style: { marginBottom: 14, background: "rgba(80,180,120,.08)", border: "1px solid rgba(80,180,120,.28)", borderRadius: 3, padding: "9px 16px", color: "#7fc8a0", fontSize: 12.5, letterSpacing: ".02em" } }, "Vetrate bloccate sulla vista originale \u2713"),
         (lockStatus === "nowindows" || lockStatus === "fail") && React.createElement("div", { style: { marginBottom: 14, background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.32)", borderRadius: 3, padding: "9px 16px", color: "#d9bd6a", fontSize: 12.5, letterSpacing: ".02em", lineHeight: 1.5 } }, "\u26A0 Finestre non isolate in questo giro: la vista esterna pu\u00F2 essere cambiata. \u00C8 il passaggio da correggere \u2014 segnalami questo avviso."),
+        removeStatus === "ok" && React.createElement("div", { style: { marginBottom: 14, background: "rgba(80,180,120,.08)", border: "1px solid rgba(80,180,120,.28)", borderRadius: 3, padding: "9px 16px", color: "#7fc8a0", fontSize: 12.5, letterSpacing: ".02em" } }, "Rimozione eseguita: " + removeList.join(", ") + " \u2713"),
+        removeStatus === "fail" && React.createElement("div", { style: { marginBottom: 14, background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.32)", borderRadius: 3, padding: "9px 16px", color: "#d9bd6a", fontSize: 12.5, letterSpacing: ".02em", lineHeight: 1.5 } }, "\u26A0 Non sono riuscito a togliere in automatico: " + removeList.join(", ") + ". Rigenera, oppure indicami meglio quale pezzo \u00E8."),
         !compareMode ? React.createElement("div", { style: { position: "relative", borderRadius: 3, overflow: "hidden", aspectRatio: imgAspect, background: "#0b1020" } },
           React.createElement("img", { src: result, alt: "Dopo", crossOrigin: "anonymous", style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } }),
           React.createElement("button", { onClick: () => setCompareMode(true), title: "Confronta prima / dopo", style: { position: "absolute", top: 12, left: 12, width: 40, height: 40, background: "rgba(8,12,24,.86)", border: "1px solid rgba(201,168,76,.5)", color: "#c9a84c", borderRadius: 3, cursor: "pointer", fontSize: 17, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" } }, "\u21D4"),
