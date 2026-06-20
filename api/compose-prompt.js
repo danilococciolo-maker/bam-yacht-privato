@@ -14,12 +14,13 @@
 //
 //  Contratto:
 //   INPUT  (POST JSON):  { userRequest, room?, stylePreset?, notes? }
-//   OUTPUT (JSON):       { ok, prompt, remove, room, style_label, materials,
-//                          confidence, clarification, model }
-//   NB: "remove" e' la lista esplicita degli oggetti da togliere. La app la usa
-//   per un PASSAGGIO DEDICATO di rimozione (dove il modello ha un solo compito,
-//   cosi obbedisce quasi sempre) e per il CONTROLLO finale che verifica che
-//   l'oggetto sia davvero sparito.
+//   OUTPUT (JSON):       { ok, prompt, remove, keep, room, style_label,
+//                          materials, confidence, clarification, model }
+//   NB: "remove" e' la lista esplicita degli oggetti da togliere; "keep" e' la
+//   lista dei pezzi che il broker ha detto di LASCIARE (serve a non togliere
+//   roba di troppo quando c'e' un pezzo simile vicino). La app usa "remove" per
+//   il PASSAGGIO DEDICATO di rimozione e per il CONTROLLO finale, e "keep" per
+//   proteggere i pezzi da non toccare e verificare che ci siano ancora.
 // ============================================================================
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -43,7 +44,9 @@ You must faithfully capture EVERY change they ask for, of any of these kinds, an
 - Modernise a whole category (e.g. "all the lamps modern", "lighting all modern").
 Name the specific piece and the specific action for every operation. Do NOT invent changes the broker did not ask for, and do NOT drop any change they did ask for. If the broker says to remove or move something, that is a firm instruction, not a suggestion.
 
-REMOVALS ARE SPECIAL — they must be obeyed exactly. Whenever the broker asks to take out / delete / remove a specific piece (Italian: "togli", "leva", "elimina", "rimuovi", "via il/la..."), you MUST also list that piece, in plain concrete English, in the separate "remove" array. Describe each item so it can be visually located in the photo (its type plus a distinguishing trait or position, e.g. "the rear-facing sofa in the centre of the room", "the armchair next to the door", "the two table lamps on the side cabinets"). If the broker asks to remove nothing, return an empty array. This array must NOT include pieces that are merely being restyled, moved, or swapped — only true removals (pieces that should disappear).
+REMOVALS ARE SPECIAL — they must be obeyed exactly, and NOTHING MORE must be removed. Whenever the broker asks to take out / delete / remove a specific piece (Italian: "togli", "leva", "elimina", "rimuovi", "via il/la..."), you MUST also list that piece, in plain concrete English, in the separate "remove" array. Describe each item by its MOST UNAMBIGUOUS distinguishing trait — orientation, what it faces, or a unique position — so it cannot be confused with a similar piece nearby. CRUCIAL: when two similar pieces are near each other and only one must go, describe the target by what sets it APART (e.g. "the sofa in the foreground whose backrest faces the camera — the one seen from behind") and do NOT use generic words like "central" or "in the middle" that could also match the piece being kept. Each entry in "remove" must point to ONE single object.
+
+WHAT TO KEEP — whenever the broker says to leave / keep / only-these (Italian: "lascia", "tieni", "solo i...", "resta", "rimangono"), list those protected pieces, in concrete English, in the separate "keep" array. This is especially important when a kept piece is similar to a removed one (e.g. keep "the front-facing sofa that faces the camera" and "the two side sofas" while removing the rear-facing one). If nothing is explicitly protected, return an empty array. Items being restyled, moved or swapped also implicitly stay, but only put in "keep" the pieces the broker named to preserve or those at risk of being removed by mistake.
 
 PRESERVE (do not change unless explicitly asked): the room's architecture, wall and window positions and shapes, ceiling lines, the view seen outside the windows, the overall layout, proportions, perspective and camera angle. Mention this only briefly at the end — the rendering stage already enforces it.
 
@@ -59,12 +62,14 @@ TRANSLATION RULES:
 - Read informal Italian with possible typos and output English.
 - Turn vague words into specific, photographable materials and colours (e.g. "elegante e caldo" -> "warm walnut, cream leather, brushed brass, soft ambient lighting").
 - Write the instruction as a short, ordered sequence of concrete operations (imperative voice), roughly 40-100 words. Be directive and unambiguous, especially for removals and repositioning (e.g. "Remove the rear-facing sofa in the centre; keep the other three sofas in place").
+- WHOLE-ROOM FINISHES: when the broker asks to change a wall, floor, ceiling or wood finish (e.g. "tutto chiaro", "pavimento chiaro", "pareti chiare", "via il legno scuro"), state EXPLICITLY that the new finish is applied to EVERY matching surface in the entire room — including the far background, the central units, any bar/credenza, console or panelling at the back — so that NO surface keeps the original finish. Background and recessed areas must be converted too, not left in the old wood.
 - Use the room type if it is stated or clearly implied (master cabin, VIP cabin, galley, etc.); otherwise use "yacht interior".
 
 OUTPUT — respond with ONE valid JSON object and NOTHING else. No markdown, no backticks, no commentary. Schema:
 {
   "prompt": "the clean English edit instruction: the explicit, ordered list of every change the broker wants (restyle and/or remove/add/move/rotate/swap), in concrete photographable terms, ending with a short note to keep the architecture, windows and viewpoint unchanged",
   "remove": ["each piece to delete entirely, as a concrete English noun phrase that can be located in the photo; empty array if nothing is to be removed"],
+  "keep": ["each piece the broker explicitly said to leave/keep, as a concrete English noun phrase (especially ones similar to a removed piece); empty array if none"],
   "room": "string",
   "style_label": "short human label for the look, e.g. 'Modern Luxury' or 'Custom Refit'",
   "materials": ["3-6 short material/palette terms for the client PDF, e.g. 'walnut veneer', 'cream leather'"],
@@ -75,9 +80,9 @@ OUTPUT — respond with ONE valid JSON object and NOTHING else. No markdown, no 
 If the request is empty or clearly not about a yacht interior, set confidence to "low", add a short Italian clarification, and still return a safe generic restyle instruction.
 
 EXAMPLE
-Broker input: "Nella cabina armatoriale gira il letto verso la finestra, togli la poltrona vicino alla porta, mettimi tutto sui toni crema e legno chiaro, lampade moderne"
+Broker input: "Allora togli il divano di schiena, lascia i due laterali e quello frontale, le due lampade a candelabro toglile e mettine moderne, tutto chiaro pavimento e pareti chiare, soffitto bianco, illuminazione moderna"
 Your output:
-{"prompt":"Master cabin refit. Rotate the bed so its headboard faces the window. Remove the armchair next to the door entirely and leave matching floor in its place. Keep every other piece of furniture where it is. Restyle all surfaces, upholstery and textiles in cream tones with light wood veneer. Replace all lamps with modern designs. Keep the architecture, window positions, the outside view, layout and camera viewpoint unchanged.","remove":["the armchair next to the door"],"room":"master cabin","style_label":"Cream & Light Wood","materials":["light wood veneer","cream upholstery","modern lamps","soft warm lighting"],"confidence":"high","clarification":""}`;
+{"prompt":"Main salon refit. Remove the foreground sofa whose backrest faces the camera (the one seen from behind) and leave matching light floor in its place. KEEP the front-facing sofa that faces the camera and both side sofas exactly where they are. Remove the two candelabra table lamps and replace them with modern lamps. Convert the whole room to a light scheme: pale wood floor, cream/light walls, white ceiling, and apply this light finish to EVERY surface including the central units and any panelling at the back — leave no original warm wood anywhere. Modern warm LED lighting. Keep the architecture, window positions, the outside view, layout and camera viewpoint unchanged.","remove":["the foreground sofa whose backrest faces the camera, seen from behind","the two candelabra table lamps"],"keep":["the front-facing sofa that faces the camera","the two side sofas"],"room":"main salon","style_label":"Modern Light & Bright","materials":["pale wood floor","cream walls","modern lamps","soft warm lighting"],"confidence":"high","clarification":""}`;
 
 // ----------------------------------------------------------------------------
 //  Helpers
@@ -117,6 +122,7 @@ function fallbackComposition({ userRequest, room, stylePreset }) {
       `keep every other piece of furniture in place. ` +
       `Keep the architecture, window positions, the outside view, layout and camera viewpoint unchanged.`,
     remove: [],
+    keep: [],
     room: roomTxt,
     style_label: stylePreset || "Custom Refit",
     materials: [],
@@ -243,6 +249,9 @@ export default async function handler(req, res) {
     prompt: String(parsed.prompt).trim(),
     remove: Array.isArray(parsed.remove)
       ? parsed.remove.map((s) => String(s).trim()).filter(Boolean)
+      : [],
+    keep: Array.isArray(parsed.keep)
+      ? parsed.keep.map((s) => String(s).trim()).filter(Boolean)
       : [],
     room: parsed.room || room || "yacht interior",
     style_label: parsed.style_label || stylePreset || "Custom Refit",
