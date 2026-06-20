@@ -14,8 +14,12 @@
 //
 //  Contratto:
 //   INPUT  (POST JSON):  { userRequest, room?, stylePreset?, notes? }
-//   OUTPUT (JSON):       { ok, prompt, room, style_label, materials,
+//   OUTPUT (JSON):       { ok, prompt, remove, room, style_label, materials,
 //                          confidence, clarification, model }
+//   NB: "remove" e' la lista esplicita degli oggetti da togliere. La app la usa
+//   per un PASSAGGIO DEDICATO di rimozione (dove il modello ha un solo compito,
+//   cosi obbedisce quasi sempre) e per il CONTROLLO finale che verifica che
+//   l'oggetto sia davvero sparito.
 // ============================================================================
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -39,6 +43,8 @@ You must faithfully capture EVERY change they ask for, of any of these kinds, an
 - Modernise a whole category (e.g. "all the lamps modern", "lighting all modern").
 Name the specific piece and the specific action for every operation. Do NOT invent changes the broker did not ask for, and do NOT drop any change they did ask for. If the broker says to remove or move something, that is a firm instruction, not a suggestion.
 
+REMOVALS ARE SPECIAL — they must be obeyed exactly. Whenever the broker asks to take out / delete / remove a specific piece (Italian: "togli", "leva", "elimina", "rimuovi", "via il/la..."), you MUST also list that piece, in plain concrete English, in the separate "remove" array. Describe each item so it can be visually located in the photo (its type plus a distinguishing trait or position, e.g. "the rear-facing sofa in the centre of the room", "the armchair next to the door", "the two table lamps on the side cabinets"). If the broker asks to remove nothing, return an empty array. This array must NOT include pieces that are merely being restyled, moved, or swapped — only true removals (pieces that should disappear).
+
 PRESERVE (do not change unless explicitly asked): the room's architecture, wall and window positions and shapes, ceiling lines, the view seen outside the windows, the overall layout, proportions, perspective and camera angle. Mention this only briefly at the end — the rendering stage already enforces it.
 
 STYLE REFERENCES (expand into concrete materials only when the broker names or implies one):
@@ -58,6 +64,7 @@ TRANSLATION RULES:
 OUTPUT — respond with ONE valid JSON object and NOTHING else. No markdown, no backticks, no commentary. Schema:
 {
   "prompt": "the clean English edit instruction: the explicit, ordered list of every change the broker wants (restyle and/or remove/add/move/rotate/swap), in concrete photographable terms, ending with a short note to keep the architecture, windows and viewpoint unchanged",
+  "remove": ["each piece to delete entirely, as a concrete English noun phrase that can be located in the photo; empty array if nothing is to be removed"],
   "room": "string",
   "style_label": "short human label for the look, e.g. 'Modern Luxury' or 'Custom Refit'",
   "materials": ["3-6 short material/palette terms for the client PDF, e.g. 'walnut veneer', 'cream leather'"],
@@ -70,7 +77,7 @@ If the request is empty or clearly not about a yacht interior, set confidence to
 EXAMPLE
 Broker input: "Nella cabina armatoriale gira il letto verso la finestra, togli la poltrona vicino alla porta, mettimi tutto sui toni crema e legno chiaro, lampade moderne"
 Your output:
-{"prompt":"Master cabin refit. Rotate the bed so its headboard faces the window. Remove the armchair next to the door entirely and leave matching floor in its place. Keep every other piece of furniture where it is. Restyle all surfaces, upholstery and textiles in cream tones with light wood veneer. Replace all lamps with modern designs. Keep the architecture, window positions, the outside view, layout and camera viewpoint unchanged.","room":"master cabin","style_label":"Cream & Light Wood","materials":["light wood veneer","cream upholstery","modern lamps","soft warm lighting"],"confidence":"high","clarification":""}`;
+{"prompt":"Master cabin refit. Rotate the bed so its headboard faces the window. Remove the armchair next to the door entirely and leave matching floor in its place. Keep every other piece of furniture where it is. Restyle all surfaces, upholstery and textiles in cream tones with light wood veneer. Replace all lamps with modern designs. Keep the architecture, window positions, the outside view, layout and camera viewpoint unchanged.","remove":["the armchair next to the door"],"room":"master cabin","style_label":"Cream & Light Wood","materials":["light wood veneer","cream upholstery","modern lamps","soft warm lighting"],"confidence":"high","clarification":""}`;
 
 // ----------------------------------------------------------------------------
 //  Helpers
@@ -109,6 +116,7 @@ function fallbackComposition({ userRequest, room, stylePreset }) {
       `Carry out exactly the changes described above and nothing else; ` +
       `keep every other piece of furniture in place. ` +
       `Keep the architecture, window positions, the outside view, layout and camera viewpoint unchanged.`,
+    remove: [],
     room: roomTxt,
     style_label: stylePreset || "Custom Refit",
     materials: [],
@@ -233,6 +241,9 @@ export default async function handler(req, res) {
   return res.status(200).json({
     ok: true,
     prompt: String(parsed.prompt).trim(),
+    remove: Array.isArray(parsed.remove)
+      ? parsed.remove.map((s) => String(s).trim()).filter(Boolean)
+      : [],
     room: parsed.room || room || "yacht interior",
     style_label: parsed.style_label || stylePreset || "Custom Refit",
     materials: Array.isArray(parsed.materials) ? parsed.materials : [],
