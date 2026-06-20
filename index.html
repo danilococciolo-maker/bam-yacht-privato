@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <meta name="theme-color" content="#1a2540">
-<title>BAM Yacht — AI Refit Studio</title>
+<title>BAM Vision — AI Refit Studio</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Crimson+Text:wght@400;600&display=swap" rel="stylesheet">
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -206,19 +206,35 @@ footer{border-top:1px solid rgba(201,168,76,.07);padding:24px 20px;text-align:ce
 <script type="text/babel" data-presets="env,react">
 const { useState, useRef, useCallback, useEffect } = React;
 
-const STYLES = [
-  { id: "modern", label: "Modern Luxury", prompt: "CRITICAL: this is a STYLE REFIT of the EXACT yacht interior room shown in the input image - first ANALYZE the input image to identify the room type (salon, dining room, galley/kitchen, master cabin, VIP cabin, guest cabin, bathroom/head, corridor, study, gym, or any other room type) and ALL its existing elements, then preserve them exactly. You MUST preserve: the IDENTICAL room geometry, the same wall positions, the same window/porthole positions, shapes and sizes (every window must remain TRANSPARENT GLASS showing OUTDOOR OCEAN AND SKY - never paint over windows, never replace with art or panels, never change window shape or size), the same FUNCTION of the room (NEVER change what the room is used for: if it has a bed it stays a bedroom with the bed in identical position, if it has sofas it stays a salon with sofas, if it has a dining table it stays a dining room, if it has a kitchen counter and appliances it stays a galley, if it has a bathtub/toilet/sink it stays a bathroom), the same furniture pieces and their exact positions (never remove furniture, never add new pieces that were not there, never swap one piece for another type - restyle existing pieces but keep them as the same type and position), the same doors and openings, the same camera viewpoint and perspective, the same spatial structure. The interior walls remain SOLID interior walls - never replace with open terraces, balconies, or sea-facing openings that were not in the original. Only restyle materials, finishes, upholstery, colors, surfaces, and lighting in ultra-modern minimalist luxury style: pristine white Carrara marble floors with subtle grey veining, high-gloss polished white lacquer surfaces, crisp white Italian leather upholstery, mirror-polished chrome and stainless steel fixtures and hardware, sculptural abstract decor, sleek linear LED strip lighting, cool whites and silvers palette, futuristic 2025 superyacht gallery-museum aesthetic. Photorealistic professional architectural photography, magazine quality, ultra detailed 8K masterpiece, cool clean daylight." },
-  { id: "scandi", label: "Scandinavian", prompt: "CRITICAL: this is a STYLE REFIT of the EXACT yacht interior room shown in the input image - first ANALYZE the input image to identify the room type (salon, dining room, galley/kitchen, master cabin, VIP cabin, guest cabin, bathroom/head, corridor, study, gym, or any other room type) and ALL its existing elements, then preserve them exactly. You MUST preserve: the IDENTICAL room geometry, the same wall positions, the same window/porthole positions, shapes and sizes (every window must remain TRANSPARENT GLASS showing OUTDOOR OCEAN AND SKY - never paint over windows, never replace with art or panels, never change window shape or size), the same FUNCTION of the room (NEVER change what the room is used for: if it has a bed it stays a bedroom with the bed in identical position, if it has sofas it stays a salon with sofas, if it has a dining table it stays a dining room, if it has a kitchen counter and appliances it stays a galley, if it has a bathtub/toilet/sink it stays a bathroom), the same furniture pieces and their exact positions (never remove furniture, never add new pieces that were not there, never swap one piece for another type - restyle existing pieces but keep them as the same type and position), the same doors and openings, the same camera viewpoint and perspective, the same spatial structure. The interior walls remain SOLID interior walls - never replace with open terraces, balconies, or sea-facing openings that were not in the original. Only restyle materials, finishes, upholstery, colors, surfaces, and lighting in warm cozy Scandinavian Nordic hygge style: pale natural ash wood floors with visible grain texture, soft warm cream and beige walls, chunky boucle ivory wool upholstery with thick knit throws and sheepskin layers, hand-thrown matte clay ceramics in muted sage green and oat tones, woven jute natural fiber rugs, soft warm pendant lights with paper shades, warm cream-beige and soft sage palette, cozy hygge atmosphere with natural textures. Photorealistic professional architectural photography, magazine quality, ultra detailed 8K masterpiece, soft warm diffused daylight." },
-  { id: "artdeco", label: "Art Deco", prompt: "CRITICAL: this is a STYLE REFIT of the EXACT yacht interior room shown in the input image - first ANALYZE the input image to identify the room type (salon, dining room, galley/kitchen, master cabin, VIP cabin, guest cabin, bathroom/head, corridor, study, gym, or any other room type) and ALL its existing elements, then preserve them exactly. You MUST preserve: the IDENTICAL room geometry, the same wall positions, the same window/porthole positions, shapes and sizes (every window must remain TRANSPARENT GLASS showing OUTDOOR OCEAN AND SKY - never paint over windows, never replace with art or panels, never change window shape or size), the same FUNCTION of the room (NEVER change what the room is used for: if it has a bed it stays a bedroom with the bed in identical position, if it has sofas it stays a salon with sofas, if it has a dining table it stays a dining room, if it has a kitchen counter and appliances it stays a galley, if it has a bathtub/toilet/sink it stays a bathroom), the same furniture pieces and their exact positions (never remove furniture, never add new pieces that were not there, never swap one piece for another type - restyle existing pieces but keep them as the same type and position), the same doors and openings, the same camera viewpoint and perspective, the same spatial structure. The interior walls remain SOLID interior walls - never replace with open terraces, balconies, or sea-facing openings that were not in the original. Only restyle materials, finishes, upholstery, colors, surfaces, and lighting in Art Deco luxury 1925 Manhattan glamour style: dark walnut wood floors with herringbone pattern, dark navy blue accent walls, deep emerald green velvet upholstery with gold piping, glamorous black Calacatta marble accents with bold white veining and polished brass trim, polished brass fixtures and hardware, crystal chandelier or sconces, geometric Deco details, rich jewel tone palette. Photorealistic professional architectural photography, magazine quality, ultra detailed 8K masterpiece, warm dramatic lighting." },
-  { id: "med", label: "Mediterraneo", prompt: "CRITICAL: this is a STYLE REFIT of the EXACT yacht interior room shown in the input image - first ANALYZE the input image to identify the room type (salon, dining room, galley/kitchen, master cabin, VIP cabin, guest cabin, bathroom/head, corridor, study, gym, or any other room type) and ALL its existing elements, then preserve them exactly. You MUST preserve: the IDENTICAL room geometry, the same wall positions, the same window/porthole positions, shapes and sizes (every window must remain TRANSPARENT GLASS showing OUTDOOR OCEAN AND SKY - never paint over windows, never replace with art or panels, never change window shape or size), the same FUNCTION of the room (NEVER change what the room is used for: if it has a bed it stays a bedroom with the bed in identical position, if it has sofas it stays a salon with sofas, if it has a dining table it stays a dining room, if it has a kitchen counter and appliances it stays a galley, if it has a bathtub/toilet/sink it stays a bathroom), the same furniture pieces and their exact positions (never remove furniture, never add new pieces that were not there, never swap one piece for another type - restyle existing pieces but keep them as the same type and position), the same doors and openings, the same camera viewpoint and perspective, the same spatial structure. The interior walls remain SOLID interior walls - never replace with open terraces, balconies, or sea-facing openings that were not in the original. Only restyle materials, finishes, upholstery, colors, surfaces, and lighting in warm sunbaked Italian Riviera luxury style: rich warm honey teak wood floors with golden tones, sunbaked terracotta and ochre warm accent walls, ivory linen upholstery with prominent terracotta orange and deep ocean navy blue cushions, woven sisal natural fiber rugs, rattan and cane accents, hand-thrown Sicilian terracotta ceramics in burnt orange and Mediterranean cobalt blue, aged patinated antique brass nautical fixtures, warm terracotta navy blue and golden cream palette. Photorealistic professional architectural photography, magazine quality, ultra detailed 8K masterpiece, warm golden hour Mediterranean light." },
-  { id: "dark", label: "Contemporary Dark", prompt: "CRITICAL: this is a STYLE REFIT of the EXACT yacht interior room shown in the input image - first ANALYZE the input image to identify the room type (salon, dining room, galley/kitchen, master cabin, VIP cabin, guest cabin, bathroom/head, corridor, study, gym, or any other room type) and ALL its existing elements, then preserve them exactly. You MUST preserve: the IDENTICAL room geometry, the same wall positions, the same window/porthole positions, shapes and sizes (every window must remain TRANSPARENT GLASS showing OUTDOOR OCEAN AND SKY - never paint over windows, never replace with art or panels, never change window shape or size), the same FUNCTION of the room (NEVER change what the room is used for: if it has a bed it stays a bedroom with the bed in identical position, if it has sofas it stays a salon with sofas, if it has a dining table it stays a dining room, if it has a kitchen counter and appliances it stays a galley, if it has a bathtub/toilet/sink it stays a bathroom), the same furniture pieces and their exact positions (never remove furniture, never add new pieces that were not there, never swap one piece for another type - restyle existing pieces but keep them as the same type and position), the same doors and openings, the same camera viewpoint and perspective, the same spatial structure. The interior walls remain SOLID interior walls - never replace with open terraces, balconies, or sea-facing openings that were not in the original. Only restyle materials, finishes, upholstery, colors, surfaces, and lighting in ultra-contemporary dark luxury style: dark walnut wood floors, charcoal grey or black painted walls, dark grey nubuck leather or charcoal velvet upholstery, sleek black Calacatta Viola marble accents with bold white veining, hidden indirect LED cove lighting in warm bronze tone, bronze metal fixtures and hardware, masculine sophisticated automotive luxury vibe. Photorealistic professional architectural photography, magazine quality, ultra detailed 8K masterpiece, dramatic moody contemporary lighting." },
+const GEOMETRY_LOCK = "CRITICAL: this is a STYLE REFIT of the EXACT yacht interior room shown in the input image - first ANALYZE the input image to identify the room type (salon, dining room, galley/kitchen, master cabin, VIP cabin, guest cabin, bathroom/head, corridor, study, gym, or any other room type) and ALL its existing elements, then preserve them exactly. You MUST preserve: the IDENTICAL room geometry, the same wall positions, the same window/porthole positions, shapes and sizes (every window must remain TRANSPARENT GLASS showing OUTDOOR OCEAN AND SKY - never paint over windows, never replace with art or panels, never change window shape or size), the same FUNCTION of the room (NEVER change what the room is used for: if it has a bed it stays a bedroom with the bed in identical position, if it has sofas it stays a salon with sofas, if it has a dining table it stays a dining room, if it has a kitchen counter and appliances it stays a galley, if it has a bathtub/toilet/sink it stays a bathroom), the same furniture pieces and their exact positions (never remove furniture, never add new pieces that were not there, never swap one piece for another type - restyle existing pieces but keep them as the same type and position), the same doors and openings, the same camera viewpoint and perspective, the same spatial structure. The interior walls remain SOLID interior walls - never replace with open terraces, balconies, or sea-facing openings that were not in the original.";
+const STYLE_CONNECTOR = " Only restyle materials, finishes, upholstery, colors, surfaces, and lighting in ";
+const QUALITY_SUFFIX = " Photorealistic professional architectural photography, magazine quality, ultra detailed 8K masterpiece.";
+
+const ROOMS = [
+  { v: "", l: "Automatica (rileva dalla foto)" },
+  { v: "main salon", l: "Salone" },
+  { v: "master cabin", l: "Cabina armatoriale" },
+  { v: "VIP cabin", l: "Cabina VIP" },
+  { v: "guest cabin", l: "Cabina ospiti" },
+  { v: "bathroom / head", l: "Bagno" },
+  { v: "galley", l: "Cucina / Galley" },
+  { v: "dining area", l: "Dinette / Pranzo" }
+];
+
+const PRESETS = [
+  { v: "", l: "Dalla descrizione" },
+  { v: "Modern Luxury", l: "Modern Luxury" },
+  { v: "Scandinavian", l: "Scandinavo" },
+  { v: "Art Deco", l: "Art Déco" },
+  { v: "Mediterraneo", l: "Mediterraneo" },
+  { v: "Contemporary Dark", l: "Contemporary Dark" }
 ];
 
 
 
 const MODEL_ENDPOINT = "/v1/models/black-forest-labs/flux-kontext-max/predictions";
 const UPSCALE_ENDPOINT = "/v1/models/topazlabs/image-upscale/predictions";
-const STEPS = ["Caricamento immagine…", "Refit con Flux Kontext Max (preserva architettura)…", "Upscaling 8K con Topaz High Fidelity…"];
+const STEPS = ["Analisi della richiesta…", "Avvio refit Flux Kontext Max…", "Refit in corso (preserva architettura)…", "Upscaling 8K con Topaz High Fidelity…"];
 
 function BAMLogo() {
   return React.createElement("img", { src: window.__LOGO_WHITE__, alt: "BAM Group", style: { height: "64px", width: "auto", display: "block" } });
@@ -228,7 +244,11 @@ function BAMYachtApp() {
   const [img, setImg] = useState(null);
   const [result, setResult] = useState(null);
   const [resultB64, setResultB64] = useState(null);
-  const [style, setStyle] = useState(STYLES[0]);
+  const [refitText, setRefitText] = useState("");
+  const [room, setRoom] = useState("");
+  const [stylePreset, setStylePreset] = useState("");
+  const [clarify, setClarify] = useState(null);
+  const [styleLabel, setStyleLabel] = useState("Refit personalizzato");
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState(0);
   const [err, setErr] = useState(null);
@@ -348,9 +368,43 @@ function BAMYachtApp() {
   const generate = async () => {
     if (!img || busy) return;
     if (!token) { setShowSettings(true); return; }
-    setBusy(true); setResult(null); setResultB64(null); setErr(null); setStep(0);
+    if (!refitText.trim()) { setErr("Descrivi il refit che desideri."); return; }
+    setBusy(true); setResult(null); setResultB64(null); setErr(null); setClarify(null); setStep(0);
     try {
-      const promptText = style.prompt;
+      // 1) Motore di composizione: traduce la richiesta del broker in stile + materiali
+      let composed = null;
+      try {
+        const cRes = await fetch("/api/compose-prompt", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userRequest: refitText.trim(),
+            room: room || undefined,
+            stylePreset: stylePreset || undefined
+          })
+        });
+        if (cRes.ok) composed = await cRes.json();
+      } catch (_) { composed = null; }
+
+      // Costruisco la descrizione di stile da iniettare nello scaffold geometry-lock
+      let label = "Refit personalizzato";
+      let styleClause = refitText.trim();
+      if (composed && composed.ok) {
+        label = composed.style_label || label;
+        // Gate qualità in ingresso: se la richiesta è troppo vaga, chiedo dettagli e non genero
+        if (composed.confidence === "low" && composed.clarification) {
+          setClarify(composed.clarification);
+          setBusy(false);
+          return;
+        }
+        const mats = Array.isArray(composed.materials) ? composed.materials.filter(Boolean) : [];
+        if (mats.length) {
+          styleClause = label + " style: " + mats.join(", ");
+        }
+      }
+      setStyleLabel(label);
+
+      const promptText = GEOMETRY_LOCK + STYLE_CONNECTOR + styleClause + "." + QUALITY_SUFFIX;
       setStep(1);
       const startRes = await fetch(MODEL_ENDPOINT, {
         method: "POST",
@@ -465,13 +519,13 @@ function BAMYachtApp() {
       }
       doc.setTextColor(232, 220, 200);
       doc.setFontSize(7);
-      doc.text("YACHT · AI REFIT STUDIO", 50, 10);
+      doc.text("BAM VISION · AI REFIT STUDIO", 50, 10);
       doc.setFontSize(11);
       doc.setTextColor(232, 220, 200);
       doc.text("Confronto e Scheda Tecnica", 50, 16);
       doc.setFontSize(8);
       doc.setTextColor(201, 168, 76);
-      doc.text(style.label.toUpperCase(), W - 12, 10, { align: "right" });
+      doc.text(styleLabel.toUpperCase(), W - 12, 10, { align: "right" });
       doc.setTextColor(180, 170, 140);
       doc.text(date, W - 12, 16, { align: "right" });
       doc.setDrawColor(201, 168, 76);
@@ -499,7 +553,7 @@ function BAMYachtApp() {
       doc.rect(rightX, p2Y + p2Img.h - 7, 70, 7, "F");
       doc.setTextColor(8, 12, 24);
       doc.setFontSize(8);
-      doc.text("DOPO · " + style.label.toUpperCase(), rightX + 3, p2Y + p2Img.h - 2);
+      doc.text("DOPO · " + styleLabel.toUpperCase(), rightX + 3, p2Y + p2Img.h - 2);
       if (hasYacht) {
         const sTop = 145;
         doc.setDrawColor(201, 168, 76);
@@ -547,7 +601,7 @@ function BAMYachtApp() {
       doc.setTextColor(110, 100, 80);
       doc.setFontSize(6);
       doc.text("Concept generato tramite AI. Render indicativo, non rappresenta un progetto esecutivo.", W / 2, H - 2.5, { align: "center" });
-      doc.save("BAM_Refit_" + style.label.replace(/\s+/g, "_") + "_" + Date.now() + ".pdf");
+      doc.save("BAM_Vision_Refit_" + styleLabel.replace(/\s+/g, "_") + "_" + Date.now() + ".pdf");
     } catch (e) {
       setErr("Errore PDF: " + e.message);
     } finally {
@@ -568,13 +622,13 @@ function BAMYachtApp() {
     React.createElement("header", null,
       React.createElement("button", { className: "gear" + (token ? " ok" : ""), onClick: () => setShowSettings(true), title: "Impostazioni Replicate" }, "\u2699"),
       React.createElement(BAMLogo, null),
-      React.createElement("span", { className: "badge" }, "v9.1 · CANNY")
+      React.createElement("span", { className: "badge" }, "BAM VISION · KONTEXT")
     ),
     showSettings && React.createElement("div", { className: "modal-bg", onClick: (e) => { if (e.target.classList.contains("modal-bg")) setShowSettings(false); } },
       React.createElement("div", { className: "modal" },
         React.createElement("div", { style: { fontFamily: G, fontSize: 22, color: "#e8dcc8", marginBottom: 8, fontWeight: 300, letterSpacing: ".05em" } }, "Impostazioni"),
         React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.4)", marginBottom: 26, lineHeight: 1.7 } },
-          "BAM Yacht usa ", React.createElement("strong", { style: { color: "#c9a84c" } }, "Replicate"), " con pipeline professionale: ", React.createElement("em", null, "Flux Kontext Max"), " (preserva architettura) + ", React.createElement("em", null, "Topaz High Fidelity V2"), " 6× per output 8K"
+          "BAM Vision usa ", React.createElement("strong", { style: { color: "#c9a84c" } }, "Replicate"), " con pipeline professionale: ", React.createElement("em", null, "Flux Kontext Max"), " (preserva architettura) + ", React.createElement("em", null, "Topaz High Fidelity V2"), " 6× per output 8K"
         ),
         React.createElement("div", { className: "sn", style: { marginBottom: 8 } }, "Replicate API Token"),
         React.createElement("input", { className: "inp", type: "password", placeholder: "r8_...", value: tokenInput, onChange: (e) => setTokenInput(e.target.value), autoFocus: true }),
@@ -592,7 +646,7 @@ function BAMYachtApp() {
     ),
     React.createElement("main", null,
       React.createElement("div", { style: { textAlign: "center", marginBottom: 56 } },
-        React.createElement("div", { style: { fontFamily: G, fontSize: 11, letterSpacing: ".38em", color: "rgba(201,168,76,.4)", textTransform: "uppercase", marginBottom: 18 } }, "Yacht · AI Refit Studio"),
+        React.createElement("div", { style: { fontFamily: G, fontSize: 11, letterSpacing: ".38em", color: "rgba(201,168,76,.4)", textTransform: "uppercase", marginBottom: 18 } }, "BAM Vision · AI Refit Studio"),
         React.createElement("h1", { style: { fontFamily: G, fontSize: "clamp(28px,6vw,52px)", fontWeight: 300, lineHeight: 1.15, color: "#e8dcc8", marginBottom: 18, letterSpacing: ".03em" } },
           "Dal ", React.createElement("em", { style: { color: "rgba(232,220,200,.32)" } }, "prima"), " al ", React.createElement("em", { style: { color: "#c9a84c" } }, "concept refit"), React.createElement("br"), "in pochi secondi."
         ),
@@ -621,9 +675,35 @@ function BAMYachtApp() {
       React.createElement("div", { className: "div" }),
       React.createElement("div", { style: { marginBottom: 42 } },
         React.createElement("div", { className: "sn" }, "02"),
-        React.createElement("div", { className: "sl" }, "Stile Refit"),
-        React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
-          STYLES.map(s => React.createElement("button", { key: s.id, className: "pill" + (style.id === s.id ? " on" : ""), onClick: () => setStyle(s) }, s.label))
+        React.createElement("div", { className: "sl" }, "Descrivi il Refit"),
+        React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.4)", marginBottom: 14, lineHeight: 1.6 } },
+          "Scrivi con parole tue come trasformare gli interni. Architettura, finestre e punto di ripresa restano identici."
+        ),
+        React.createElement("textarea", {
+          className: "inp",
+          rows: 4,
+          style: { resize: "vertical", minHeight: 96, lineHeight: 1.6, width: "100%" },
+          placeholder: "Es: salone piu moderno e luminoso, divani in pelle crema, legno chiaro, lascia le finestre come sono",
+          value: refitText,
+          onChange: (e) => { setRefitText(e.target.value); if (clarify) setClarify(null); if (err) setErr(null); }
+        }),
+        React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 14 } },
+          React.createElement("div", null,
+            React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.42)", marginBottom: 6, letterSpacing: 1, textTransform: "uppercase" } }, "Stanza \u00b7 opzionale"),
+            React.createElement("select", { className: "inp", value: room, onChange: (e) => setRoom(e.target.value) },
+              ROOMS.map(r => React.createElement("option", { key: r.v, value: r.v }, r.l))
+            )
+          ),
+          React.createElement("div", null,
+            React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.42)", marginBottom: 6, letterSpacing: 1, textTransform: "uppercase" } }, "Stile di partenza \u00b7 opzionale"),
+            React.createElement("select", { className: "inp", value: stylePreset, onChange: (e) => setStylePreset(e.target.value) },
+              PRESETS.map(p => React.createElement("option", { key: p.v, value: p.v }, p.l))
+            )
+          )
+        ),
+        clarify && React.createElement("div", { style: { marginTop: 16, background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.3)", borderRadius: 3, padding: "12px 18px", color: "#c9a84c", fontSize: 14, lineHeight: 1.55 } },
+          React.createElement("strong", { style: { display: "block", marginBottom: 4, fontFamily: G } }, "Serve un dettaglio in piu"),
+          clarify
         )
       ),
       React.createElement("div", { className: "div" }),
@@ -654,7 +734,7 @@ function BAMYachtApp() {
         )
       ),
       React.createElement("div", { style: { textAlign: "center", marginBottom: 42 } },
-        React.createElement("button", { className: "gbtn", onClick: generate, disabled: !img || busy }, busy ? "Generazione in corso…" : "Genera Concept Refit"),
+        React.createElement("button", { className: "gbtn", onClick: generate, disabled: !img || busy || !refitText.trim() }, busy ? "Generazione in corso…" : "Genera Concept Refit"),
         err && React.createElement("div", { style: { marginTop: 14, background: "rgba(220,80,80,.07)", border: "1px solid rgba(220,80,80,.2)", borderRadius: 3, padding: "12px 18px", color: "#e08080", fontSize: 14, lineHeight: 1.5 } }, err)
       ),
       busy && React.createElement("div", { style: { textAlign: "center", padding: "56px 32px", background: "rgba(255,255,255,.012)", border: "1px solid rgba(201,168,76,.07)", borderRadius: 3, marginBottom: 32 } },
@@ -674,7 +754,7 @@ function BAMYachtApp() {
         !compareMode ? React.createElement("div", { style: { position: "relative", borderRadius: 3, overflow: "hidden", aspectRatio: imgAspect, background: "#0b1020" } },
           React.createElement("img", { src: result, alt: "Dopo", crossOrigin: "anonymous", style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } }),
           React.createElement("button", { onClick: () => setCompareMode(true), title: "Confronta prima / dopo", style: { position: "absolute", top: 12, left: 12, width: 40, height: 40, background: "rgba(8,12,24,.86)", border: "1px solid rgba(201,168,76,.5)", color: "#c9a84c", borderRadius: 3, cursor: "pointer", fontSize: 17, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" } }, "\u21D4"),
-          React.createElement("div", { style: { position: "absolute", top: 12, right: 12, background: "rgba(201,168,76,.86)", padding: "5px 14px", fontSize: 10, letterSpacing: ".18em", color: "#060a14", textTransform: "uppercase", borderRadius: 2, fontWeight: 600 } }, style.label)
+          React.createElement("div", { style: { position: "absolute", top: 12, right: 12, background: "rgba(201,168,76,.86)", padding: "5px 14px", fontSize: 10, letterSpacing: ".18em", color: "#060a14", textTransform: "uppercase", borderRadius: 2, fontWeight: 600 } }, styleLabel)
         ) : React.createElement("div", {
           ref: sliderRef,
           style: { position: "relative", cursor: "ew-resize", borderRadius: 3, overflow: "hidden", userSelect: "none", aspectRatio: imgAspect, background: "#0b1020" },
@@ -691,7 +771,7 @@ function BAMYachtApp() {
           ),
           React.createElement("button", { onClick: () => setCompareMode(false), title: "Torna al render", style: { position: "absolute", top: 12, left: 12, width: 40, height: 40, background: "rgba(8,12,24,.86)", border: "1px solid rgba(201,168,76,.5)", color: "#c9a84c", borderRadius: 3, cursor: "pointer", fontSize: 17, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 5 } }, "\u00D7"),
           React.createElement("div", { style: { position: "absolute", top: 12, left: 60, background: "rgba(8,12,24,.72)", padding: "4px 12px", fontSize: 10, letterSpacing: ".2em", color: "rgba(232,220,200,.6)", textTransform: "uppercase", borderRadius: 2 } }, "Prima"),
-          React.createElement("div", { style: { position: "absolute", top: 12, right: 12, background: "rgba(201,168,76,.86)", padding: "4px 12px", fontSize: 10, letterSpacing: ".18em", color: "#060a14", textTransform: "uppercase", borderRadius: 2, fontWeight: 600 } }, style.label)
+          React.createElement("div", { style: { position: "absolute", top: 12, right: 12, background: "rgba(201,168,76,.86)", padding: "4px 12px", fontSize: 10, letterSpacing: ".18em", color: "#060a14", textTransform: "uppercase", borderRadius: 2, fontWeight: 600 } }, styleLabel)
         ),
         React.createElement("div", { style: { display: "flex", justifyContent: "center", gap: 12, marginTop: 24, flexWrap: "wrap" } },
           React.createElement("button", { className: "pbtn", onClick: downloadPDF, disabled: pdfBusy || !resultB64 }, pdfBusy ? "Creazione PDF…" : !resultB64 ? "Preparazione PDF…" : "↓ Scarica PDF"),
