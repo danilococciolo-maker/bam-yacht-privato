@@ -241,7 +241,7 @@ const FILL_ENDPOINT = "/v1/models/black-forest-labs/flux-fill-pro/predictions";
 const EDIT_ENDPOINT = "/v1/models/google/nano-banana-pro/predictions";
 const EDIT_FALLBACK_ENDPOINT = "/v1/models/google/nano-banana/predictions";
 const JUDGE_ENDPOINT = "/v1/models/google/gemini-3-flash/predictions";
-const N_SAMPLES = 3;
+const N_SAMPLES = 4;
 const WINDOW_MASK_PROMPT = "window . porthole . boat window";
 const MASK_EXPAND = 10;
 const STEPS = ["Analizzo la tua richiesta…", "Blocco le finestre e la vista esterna…", "Ridisegno divani, tavolini, illuminazione e tessuti…", "Blocco le geometrie e scelgo il risultato migliore…", "Rifinitura finale dei dettagli…"];
@@ -367,7 +367,7 @@ function compositeWindows(renderUrl, refDataUri, maskUrl) {
 // Giudice AI: dà un voto 0-100 a una proposta. Best effort: in caso di errore torna 50.
 async function judgeVariant(variantUrl, userRequest, token) {
   try {
-    const jp = "You are a strict art director reviewing an AI yacht-interior refit render. The broker asked for: \"" + userRequest + "\". Rate THIS image from 0 to 100 on realism, absence of artifacts or deformed furniture, believable yacht architecture, and how well it satisfies the request. Reply with ONLY one integer between 0 and 100, nothing else.";
+    const jp = "You are a strict art director reviewing an AI yacht-interior refit render. The broker asked for: \"" + userRequest + "\". Score THIS image from 0 to 100. The MOST important factor: did it actually carry out the broker's explicit instructions - especially any request to REMOVE, MOVE or ROTATE a specific piece of furniture? If the broker asked to remove an item and it is still present, or asked to move it and it did not move, heavily penalise the score. Then also weigh realism, absence of artifacts or deformed furniture, believable yacht architecture, and that the room is still fully furnished. Reply with ONLY one integer between 0 and 100, nothing else.";
     let pred = await replicateCreate(JUDGE_ENDPOINT, token, { input: { prompt: jp, image_input: [variantUrl] } });
     pred = await replicatePoll(pred, token, 40);
     let out = pred.output;
@@ -535,7 +535,7 @@ function BAMYachtApp() {
         if (cRes.ok) composed = await cRes.json();
       } catch (_) { composed = null; }
 
-      // Costruisco la descrizione di stile da iniettare nello scaffold geometry-lock
+      // Costruisco l'istruzione da iniettare nello scaffold geometry-lock
       let label = "Refit personalizzato";
       let styleClause = refitText.trim();
       if (composed && composed.ok) {
@@ -546,9 +546,9 @@ function BAMYachtApp() {
           setBusy(false);
           return;
         }
-        const mats = Array.isArray(composed.materials) ? composed.materials.filter(Boolean) : [];
-        if (mats.length) {
-          styleClause = refitText.trim() + ". " + label + " palette and materials: " + mats.join(", ");
+        // Uso l'istruzione pulita prodotta dal cervello come comando principale.
+        if (composed.prompt && String(composed.prompt).trim()) {
+          styleClause = String(composed.prompt).trim();
         }
       }
       setStyleLabel(label);
@@ -583,7 +583,7 @@ function BAMYachtApp() {
 
       // STEP 2 — Genero piu proposte con Nano Banana Pro (in parallelo), fallback su Nano Banana
       setStep(2);
-      const editPrompt = "Photorealistic refit of THIS exact yacht interior shown in the image. ABSOLUTE RULES, in order of priority: (1) Keep the room architecture, walls, ceiling, every window and porthole, the exact view seen OUTSIDE through the windows, and the camera viewpoint and perspective IDENTICAL to the original photo. (2) Do NOT empty or simplify the room and do NOT redesign it from scratch: every sofa, armchair, chair, table and lamp that exists in the original must still be present and in the same position in the result, UNLESS the user explicitly asks to remove that specific piece. (3) Make ONLY the changes the user lists below, nothing more. Restyle the pieces that stay (colours, fabrics, materials, finishes, lighting) as the user describes, but the room must remain fully furnished, lived-in and realistic - never a bare empty room. If the user asks to remove one specific item, remove only that one and leave every other piece in place. If the user asks to add or modernise something (e.g. lamps), do exactly that. User's requested changes: " + styleClause + ". The result must be a believable, fully-furnished luxury yacht interior, professional architectural photography, ultra detailed.";
+      const editPrompt = "Photorealistic refit of THIS exact yacht interior shown in the image. ABSOLUTE RULES, in order of priority: (1) Keep the room architecture, walls, ceiling, every window and porthole, the exact view seen OUTSIDE through the windows, and the camera viewpoint and perspective IDENTICAL to the original photo. (2) Do NOT empty or simplify the room and do NOT redesign it from scratch: every sofa, armchair, chair, table and lamp that exists in the original must still be present and in the same position in the result, UNLESS the user explicitly asks to remove or move that specific piece. (3) Carry out EVERY change the user lists below as a MANDATORY instruction, not an optional suggestion. In particular: if the user asks to REMOVE a specific item, that item MUST be completely absent from the result (replace the area with floor/empty space that matches the room) and every OTHER piece stays; if the user asks to MOVE or ROTATE a piece, reposition that piece accordingly while keeping the rest; if the user asks to ADD, SWAP or MODERNISE something (e.g. lamps), do exactly that. Make only the changes the user lists, nothing more. Restyle the pieces that stay (colours, fabrics, materials, finishes, lighting) as described. The room must remain fully furnished, lived-in and realistic - never a bare empty room. User's requested changes: " + styleClause + ". The result must be a believable, fully-furnished luxury yacht interior, professional architectural photography, ultra detailed.";
       async function runEdit(endpoint) {
         let p = await replicateCreate(endpoint, token, { input: { prompt: editPrompt, image_input: [img] } });
         p = await replicatePoll(p, token, 90);
