@@ -235,7 +235,146 @@ const PRESETS = [
 
 const MODEL_ENDPOINT = "/v1/models/black-forest-labs/flux-kontext-max/predictions";
 const UPSCALE_ENDPOINT = "/v1/models/topazlabs/image-upscale/predictions";
-const STEPS = ["Analisi della richiesta…", "Avvio refit Flux Kontext Max…", "Refit in corso (preserva architettura)…", "Upscaling 8K con Topaz High Fidelity…"];
+const SEG_MODEL_ENDPOINT = "/v1/models/schananas/grounded_sam";
+const PREDICTIONS_ENDPOINT = "/v1/predictions";
+const FILL_ENDPOINT = "/v1/models/black-forest-labs/flux-fill-pro/predictions";
+const EDIT_ENDPOINT = "/v1/models/google/nano-banana-pro/predictions";
+const EDIT_FALLBACK_ENDPOINT = "/v1/models/google/nano-banana/predictions";
+const JUDGE_ENDPOINT = "/v1/models/google/gemini-3-flash/predictions";
+const N_SAMPLES = 3;
+const WINDOW_MASK_PROMPT = "window . porthole . boat window";
+const MASK_EXPAND = 10;
+const STEPS = ["Analisi della richiesta…", "Individuo finestre e vista esterna…", "Genero le proposte (Nano Banana Pro)…", "Blocco le vetrate e scelgo la migliore…", "Upscaling 8K con Topaz High Fidelity…"];
+
+async function replicateCreate(endpoint, token, payload) {
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Authorization": "Token " + token, "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  if (res.status === 401) throw new Error("Token Replicate non valido. Verificalo in Impostazioni.");
+  if (res.status === 402) throw new Error("Credito Replicate esaurito.");
+  if (res.status === 429) throw new Error("Troppe richieste. Attendi qualche secondo.");
+  if (!res.ok) { const txt = await res.text(); throw new Error("Errore Replicate " + res.status + ": " + txt.slice(0, 220)); }
+  return res.json();
+}
+
+async function replicatePoll(prediction, token, maxAttempts) {
+  let attempts = 0;
+  while ((prediction.status === "starting" || prediction.status === "processing") && attempts < maxAttempts) {
+    await new Promise(r => setTimeout(r, 2000));
+    const pollPath = new URL(prediction.urls.get).pathname;
+    const pollRes = await fetch(pollPath, { headers: { "Authorization": "Token " + token } });
+    if (!pollRes.ok) throw new Error("Errore nel monitoraggio dell'elaborazione");
+    prediction = await pollRes.json();
+    attempts++;
+  }
+  if (prediction.status === "failed") throw new Error("Elaborazione fallita: " + (prediction.error || "errore sconosciuto"));
+  if (prediction.status === "canceled") throw new Error("Elaborazione annullata");
+  if (prediction.status !== "succeeded") throw new Error("Timeout dell'elaborazione. Riprova.");
+  return prediction;
+}
+
+// Costruisce la maschera per Flux Fill: BIANCO = interno da rifare, NERO = finestre da preservare.
+// Parte dalla maschera-finestre di grounded_sam (bianco = finestre) e la inverte.
+function buildInpaintMask(maskUrl, refDataUri) {
+  return new Promise((resolve, reject) => {
+    const ref = new Image();
+    ref.onload = () => {
+      const m = new Image();
+      m.crossOrigin = "anonymous";
+      m.onload = () => {
+        try {
+          const w = ref.naturalWidth || ref.width;
+          const h = ref.naturalHeight || ref.height;
+          const canvas = document.createElement("canvas");
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(m, 0, 0, w, h);
+          const imgData = ctx.getImageData(0, 0, w, h);
+          const d = imgData.data;
+          for (let i = 0; i < d.length; i += 4) {
+            const lum = (d[i] + d[i + 1] + d[i + 2]) / 3;
+            const v = lum > 110 ? 0 : 255; // finestre (chiare nella maschera) -> nere; resto -> bianco
+            d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+          }
+          ctx.putImageData(imgData, 0, 0);
+          resolve(canvas.toDataURL("image/png"));
+        } catch (e) { reject(e); }
+      };
+      m.onerror = () => reject(new Error("maschera non caricata"));
+      m.src = maskUrl;
+    };
+    ref.onerror = () => reject(new Error("immagine di riferimento non caricata"));
+    ref.src = refDataUri;
+  });
+}
+
+// Lucchetto vetrate: re-incolla la vista esterna ORIGINALE sopra il render, usando la maschera-finestre.
+// renderUrl = proposta AI; refDataUri = foto originale; maskUrl = maschera finestre (bianco = finestre).
+function compositeWindows(renderUrl, refDataUri, maskUrl) {
+  return new Promise((resolve) => {
+    const ref = new Image(); ref.crossOrigin = "anonymous";
+    ref.onload = () => {
+      const w = ref.naturalWidth || ref.width;
+      const h = ref.naturalHeight || ref.height;
+      const render = new Image(); render.crossOrigin = "anonymous";
+      render.onload = () => {
+        const mask = new Image(); mask.crossOrigin = "anonymous";
+        mask.onload = () => {
+          try {
+            const out = document.createElement("canvas");
+            out.width = w; out.height = h;
+            const octx = out.getContext("2d");
+            octx.drawImage(render, 0, 0, w, h);
+            // maschera con alpha = luminanza (finestre opache, resto trasparente)
+            const ma = document.createElement("canvas");
+            ma.width = w; ma.height = h;
+            const mctx = ma.getContext("2d");
+            mctx.drawImage(mask, 0, 0, w, h);
+            const md = mctx.getImageData(0, 0, w, h);
+            const mp = md.data;
+            for (let i = 0; i < mp.length; i += 4) {
+              const lum = (mp[i] + mp[i + 1] + mp[i + 2]) / 3;
+              mp[i] = 255; mp[i + 1] = 255; mp[i + 2] = 255;
+              mp[i + 3] = lum > 110 ? 255 : 0;
+            }
+            mctx.putImageData(md, 0, 0);
+            // layer finestre dall'originale, ritagliato sulle finestre
+            const win = document.createElement("canvas");
+            win.width = w; win.height = h;
+            const wctx = win.getContext("2d");
+            wctx.drawImage(ref, 0, 0, w, h);
+            wctx.globalCompositeOperation = "destination-in";
+            wctx.drawImage(ma, 0, 0);
+            // sovrappongo le finestre originali sul render
+            octx.drawImage(win, 0, 0);
+            resolve(out.toDataURL("image/jpeg", 0.95));
+          } catch (e) { resolve(renderUrl); }
+        };
+        mask.onerror = () => resolve(renderUrl);
+        mask.src = maskUrl;
+      };
+      render.onerror = () => resolve(renderUrl);
+      render.src = renderUrl;
+    };
+    ref.onerror = () => resolve(renderUrl);
+    ref.src = refDataUri;
+  });
+}
+
+// Giudice AI: dà un voto 0-100 a una proposta. Best effort: in caso di errore torna 50.
+async function judgeVariant(variantUrl, userRequest, token) {
+  try {
+    const jp = "You are a strict art director reviewing an AI yacht-interior refit render. The broker asked for: \"" + userRequest + "\". Rate THIS image from 0 to 100 on realism, absence of artifacts or deformed furniture, believable yacht architecture, and how well it satisfies the request. Reply with ONLY one integer between 0 and 100, nothing else.";
+    let pred = await replicateCreate(JUDGE_ENDPOINT, token, { input: { prompt: jp, image_input: [variantUrl] } });
+    pred = await replicatePoll(pred, token, 40);
+    let out = pred.output;
+    if (Array.isArray(out)) out = out.join(" ");
+    const m = String(out == null ? "" : out).match(/\d{1,3}/);
+    return m ? Math.min(100, parseInt(m[0], 10)) : 50;
+  } catch (_) { return 50; }
+}
 
 function BAMLogo() {
   return React.createElement("img", { src: window.__LOGO_WHITE__, alt: "BAM Group", style: { height: "64px", width: "auto", display: "block" } });
@@ -250,6 +389,7 @@ function BAMYachtApp() {
   const [stylePreset, setStylePreset] = useState("");
   const [clarify, setClarify] = useState(null);
   const [styleLabel, setStyleLabel] = useState("Refit personalizzato");
+  const [lockStatus, setLockStatus] = useState(null);
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState(0);
   const [err, setErr] = useState(null);
@@ -370,7 +510,7 @@ function BAMYachtApp() {
     if (!img || busy) return;
     if (!token) { setShowSettings(true); return; }
     if (!refitText.trim()) { setErr("Descrivi il refit che desideri."); return; }
-    setBusy(true); setResult(null); setResultB64(null); setErr(null); setClarify(null); setStep(0);
+    setBusy(true); setResult(null); setResultB64(null); setErr(null); setClarify(null); setStep(0); setLockStatus(null);
     try {
       // 1) Motore di composizione: traduce la richiesta del broker in stile + materiali
       let composed = null;
@@ -405,36 +545,76 @@ function BAMYachtApp() {
       }
       setStyleLabel(label);
 
-      const promptText = GEOMETRY_LOCK + FURNITURE_FREEDOM + STYLE_CONNECTOR + styleClause + "." + QUALITY_SUFFIX;
+      // STEP 1 — Individuo finestre e vista esterna (maschera per il lucchetto)
       setStep(1);
-      const startRes = await fetch(MODEL_ENDPOINT, {
-        method: "POST",
-        headers: { "Authorization": "Token " + token, "Content-Type": "application/json" },
-        body: JSON.stringify({
-     input: { prompt: promptText, input_image: img, aspect_ratio: "match_input_image", output_format: "jpg", safety_tolerance: 6 }
-        })
-      });
-      if (startRes.status === 401) throw new Error("Token Replicate non valido. Verificalo in Impostazioni.");
-      if (startRes.status === 402) throw new Error("Credito Replicate esaurito.");
-      if (startRes.status === 429) throw new Error("Troppe richieste. Attendi qualche secondo.");
-      if (!startRes.ok) { const txt = await startRes.text(); throw new Error("Errore Replicate " + startRes.status + ": " + txt.slice(0, 200)); }
-      let prediction = await startRes.json();
-      let attempts = 0;
-      setStep(2);
-      while ((prediction.status === "starting" || prediction.status === "processing") && attempts < 90) {
-        await new Promise(r => setTimeout(r, 2000));
-        const pollPath = new URL(prediction.urls.get).pathname;
-        const pollRes = await fetch(pollPath, { headers: { "Authorization": "Token " + token } });
-        if (!pollRes.ok) throw new Error("Errore nel monitoraggio del render");
-        prediction = await pollRes.json();
-        attempts++;
+      let windowMaskUrl = null;
+      async function segment(maskPrompt) {
+        const segModelRes = await fetch(SEG_MODEL_ENDPOINT, { headers: { "Authorization": "Token " + token } });
+        if (!segModelRes.ok) return null;
+        const segModel = await segModelRes.json();
+        const segVersion = segModel && segModel.latest_version && segModel.latest_version.id;
+        if (!segVersion) return null;
+        let segPred = await replicateCreate(PREDICTIONS_ENDPOINT, token, {
+          version: segVersion,
+          input: { image: img, mask_prompt: maskPrompt, negative_mask_prompt: "", adjustment_factor: MASK_EXPAND }
+        });
+        segPred = await replicatePoll(segPred, token, 60);
+        let segOut = segPred.output;
+        if (Array.isArray(segOut)) {
+          return segOut.find(u => typeof u === "string" && /mask/i.test(u) && !/annotat/i.test(u))
+              || segOut.find(u => typeof u === "string" && /mask/i.test(u))
+              || segOut.find(u => typeof u === "string")
+              || null;
+        }
+        return typeof segOut === "string" ? segOut : null;
       }
-      if (prediction.status === "failed") throw new Error("Render fallito: " + (prediction.error || "errore sconosciuto"));
-      if (prediction.status === "canceled") throw new Error("Render annullato");
-      if (prediction.status !== "succeeded") throw new Error("Timeout del render. Riprova.");
-      const baseOutputUrl = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
-      if (!baseOutputUrl) throw new Error("Nessun output dal modello");
+      try {
+        windowMaskUrl = await segment(WINDOW_MASK_PROMPT);
+        if (!windowMaskUrl) windowMaskUrl = await segment("window");
+      } catch (_) { windowMaskUrl = null; }
+
+      // STEP 2 — Genero piu proposte con Nano Banana Pro (in parallelo), fallback su Nano Banana
+      setStep(2);
+      const editPrompt = "Photorealistic refit of THIS exact yacht interior shown in the image. CRITICAL: keep the room architecture, walls, ceiling, every window and porthole, and the view seen OUTSIDE through the windows, plus the camera viewpoint and perspective, EXACTLY as in the original photo - never alter the windows or the outdoor view in any way. You MAY freely restyle, replace, rearrange, add or remove the interior FURNITURE and decor to apply this refit: " + styleClause + ". Keep it a believable luxury yacht interior. Magazine-quality, ultra detailed, professional architectural photography.";
+      async function runEdit(endpoint) {
+        let p = await replicateCreate(endpoint, token, { input: { prompt: editPrompt, image_input: [img] } });
+        p = await replicatePoll(p, token, 90);
+        return Array.isArray(p.output) ? p.output[0] : p.output;
+      }
+      const samplePromises = [];
+      for (let i = 0; i < N_SAMPLES; i++) {
+        samplePromises.push(runEdit(EDIT_ENDPOINT).catch(() => runEdit(EDIT_FALLBACK_ENDPOINT)).catch(() => null));
+      }
+      let variants = (await Promise.all(samplePromises)).filter(Boolean);
+      if (!variants.length) throw new Error("Nessuna proposta generata. Riprova tra poco.");
+
+      // STEP 3 — Lucchetto vetrate su ogni proposta + giudice AI sceglie la migliore
       setStep(3);
+      if (windowMaskUrl) {
+        const locked = [];
+        let applied = 0;
+        for (const v of variants) {
+          try {
+            const out = await compositeWindows(v, img, windowMaskUrl);
+            if (out && out !== v) applied++;
+            locked.push(out);
+          } catch (_) { locked.push(v); }
+        }
+        variants = locked;
+        setLockStatus(applied > 0 ? "ok" : "fail");
+      } else {
+        setLockStatus("nowindows");
+      }
+      let baseOutputUrl = variants[0];
+      try {
+        const scored = [];
+        for (const v of variants) { scored.push({ v: v, s: await judgeVariant(v, refitText.trim(), token) }); }
+        scored.sort((a, b) => b.s - a.s);
+        baseOutputUrl = scored[0].v;
+      } catch (_) { baseOutputUrl = variants[0]; }
+
+      if (!baseOutputUrl) throw new Error("Nessun output dal modello");
+      setStep(4);
       try {
         const upRes = await fetch(UPSCALE_ENDPOINT, {
           method: "POST",
@@ -741,7 +921,7 @@ function BAMYachtApp() {
       busy && React.createElement("div", { style: { textAlign: "center", padding: "56px 32px", background: "rgba(255,255,255,.012)", border: "1px solid rgba(201,168,76,.07)", borderRadius: 3, marginBottom: 32 } },
         React.createElement("div", { className: "sp", style: { marginBottom: 26 } }),
         React.createElement("div", { className: "ltxt" }, STEPS[step]),
-        React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.16)", marginTop: 10 } }, "il rendering richiede circa 15-40 secondi")
+        React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.16)", marginTop: 10 } }, "genero piu proposte e scelgo la migliore · circa 60-120 secondi")
       ),
       result && img && React.createElement("div", { className: "rv" },
         React.createElement("div", { className: "div" }),
@@ -752,6 +932,8 @@ function BAMYachtApp() {
           ),
           React.createElement("span", { style: { fontSize: 12, color: "rgba(232,220,200,.2)" } }, compareMode ? "← trascina la riga →" : "tocca ⇔ per confrontare")
         ),
+        lockStatus === "ok" && React.createElement("div", { style: { marginBottom: 14, background: "rgba(80,180,120,.08)", border: "1px solid rgba(80,180,120,.28)", borderRadius: 3, padding: "9px 16px", color: "#7fc8a0", fontSize: 12.5, letterSpacing: ".02em" } }, "Vetrate bloccate sulla vista originale \u2713"),
+        (lockStatus === "nowindows" || lockStatus === "fail") && React.createElement("div", { style: { marginBottom: 14, background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.32)", borderRadius: 3, padding: "9px 16px", color: "#d9bd6a", fontSize: 12.5, letterSpacing: ".02em", lineHeight: 1.5 } }, "\u26A0 Finestre non isolate in questo giro: la vista esterna pu\u00F2 essere cambiata. \u00C8 il passaggio da correggere \u2014 segnalami questo avviso."),
         !compareMode ? React.createElement("div", { style: { position: "relative", borderRadius: 3, overflow: "hidden", aspectRatio: imgAspect, background: "#0b1020" } },
           React.createElement("img", { src: result, alt: "Dopo", crossOrigin: "anonymous", style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } }),
           React.createElement("button", { onClick: () => setCompareMode(true), title: "Confronta prima / dopo", style: { position: "absolute", top: 12, left: 12, width: 40, height: 40, background: "rgba(8,12,24,.86)", border: "1px solid rgba(201,168,76,.5)", color: "#c9a84c", borderRadius: 3, cursor: "pointer", fontSize: 17, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" } }, "\u21D4"),
