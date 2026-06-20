@@ -361,27 +361,49 @@ function compositeWindows(renderUrl, refDataUri, maskUrl) {
             out.width = w; out.height = h;
             const octx = out.getContext("2d");
             octx.drawImage(render, 0, 0, w, h);
-            // maschera con alpha = luminanza (finestre opache, resto trasparente)
+            // leggo i pixel della foto ORIGINALE: servono per distinguere la VERA vista
+            // esterna (mare/cielo) da vetrine, mobili a vetri e tende che il segmentatore
+            // a volte scambia per finestre. Reincollo SOLO la vista esterna.
+            const rc = document.createElement("canvas");
+            rc.width = w; rc.height = h;
+            const rcx = rc.getContext("2d");
+            rcx.drawImage(ref, 0, 0, w, h);
+            const rd = rcx.getImageData(0, 0, w, h).data;
+            // maschera con alpha = finestre, ma SOLO dove l'originale e' vista esterna
             const ma = document.createElement("canvas");
             ma.width = w; ma.height = h;
             const mctx = ma.getContext("2d");
             mctx.drawImage(mask, 0, 0, w, h);
             const md = mctx.getImageData(0, 0, w, h);
             const mp = md.data;
+            let locked = 0;
             for (let i = 0; i < mp.length; i += 4) {
-              const lum = (mp[i] + mp[i + 1] + mp[i + 2]) / 3;
-              mp[i] = 255; mp[i + 1] = 255; mp[i + 2] = 255;
-              mp[i + 3] = lum > 110 ? 255 : 0;
+              const mlum = (mp[i] + mp[i + 1] + mp[i + 2]) / 3;
+              let a = 0;
+              if (mlum > 110) {
+                // l'originale qui e' cielo/mare? toni freddi o molto chiari = vista esterna.
+                // toni caldi (legno/ottone/tende calde) = arredo interno -> NON bloccare.
+                const R = rd[i], G = rd[i + 1], B = rd[i + 2];
+                const lum = (R + G + B) / 3;
+                const warm = (R - B) > 16 && R >= G;        // legno/tende calde
+                const cool = (B - R) > -6;                   // cielo/mare (freddo o neutro)
+                const veryBright = lum > 150;                // cielo/bianco abbagliante
+                const exterior = veryBright || (cool && lum > 60);
+                if (exterior && !warm) { a = 255; locked++; }
+              }
+              mp[i] = 255; mp[i + 1] = 255; mp[i + 2] = 255; mp[i + 3] = a;
             }
+            // se non c'e' vera vista esterna da preservare, lascio il render cosi com'e'
+            if (locked < (w * h) * 0.0008) { resolve(renderUrl); return; }
             mctx.putImageData(md, 0, 0);
-            // layer finestre dall'originale, ritagliato sulle finestre
+            // layer finestre dall'originale, ritagliato sulla sola vista esterna
             const win = document.createElement("canvas");
             win.width = w; win.height = h;
             const wctx = win.getContext("2d");
             wctx.drawImage(ref, 0, 0, w, h);
             wctx.globalCompositeOperation = "destination-in";
             wctx.drawImage(ma, 0, 0);
-            // sovrappongo le finestre originali sul render
+            // sovrappongo la vista esterna originale sul render
             octx.drawImage(win, 0, 0);
             resolve(out.toDataURL("image/jpeg", 0.95));
           } catch (e) { resolve(renderUrl); }
