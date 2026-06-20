@@ -244,7 +244,8 @@ const JUDGE_ENDPOINT = "/v1/models/google/gemini-3-flash/predictions";
 const N_SAMPLES = 3;
 const WINDOW_MASK_PROMPT = "window . porthole . boat window";
 const MASK_EXPAND = 10;
-const STEPS = ["Analisi della richiesta…", "Individuo finestre e vista esterna…", "Genero le proposte (Nano Banana Pro)…", "Blocco le vetrate e scelgo la migliore…", "Upscaling 8K con Topaz High Fidelity…"];
+const STEPS = ["Analizzo la tua richiesta…", "Blocco le finestre e la vista esterna…", "Ridisegno divani, tavolini, illuminazione e tessuti…", "Blocco le geometrie e scelgo il risultato migliore…", "Rifinitura finale dei dettagli…"];
+const PHASES = ["Analizzo la tua richiesta…", "Individuo le finestre e la vista esterna…", "Blocco le vetrate sulla vista originale…", "Blocco l'architettura e le geometrie…", "Cambio i colori delle pareti…", "Cambio il colore del pavimento…", "Aggiorno l'illuminazione…", "Ridisegno i divani e le poltrone…", "Ridisegno i tavolini…", "Aggiorno i tessuti e i materiali…", "Rifinitura finale dei dettagli…"];
 
 async function replicateCreate(endpoint, token, payload) {
   const res = await fetch(endpoint, {
@@ -402,6 +403,7 @@ function BAMYachtApp() {
   const [imgAspect, setImgAspect] = useState("16/9");
   const [compareMode, setCompareMode] = useState(false);
   const [yacht, setYacht] = useState({ cantiere: "", modello: "", anno: "", oreMotore: "", manutenzione: "" });
+  const [tick, setTick] = useState(0);
   const updateYacht = (k, v) => setYacht(prev => Object.assign({}, prev, { [k]: v }));
   const fileRef = useRef();
   const sliderRef = useRef();
@@ -412,6 +414,12 @@ function BAMYachtApp() {
       if (t) { setToken(t); setTokenInput(t); }
     } catch (_) {}
   }, []);
+
+  useEffect(() => {
+    if (!busy) { setTick(0); return; }
+    const id = setInterval(() => setTick(t => t + 1), 3000);
+    return () => clearInterval(id);
+  }, [busy]);
 
   const saveToken = () => {
     const t = (tokenInput || "").trim() || token;
@@ -575,7 +583,7 @@ function BAMYachtApp() {
 
       // STEP 2 — Genero piu proposte con Nano Banana Pro (in parallelo), fallback su Nano Banana
       setStep(2);
-      const editPrompt = "Photorealistic refit of THIS exact yacht interior shown in the image. CRITICAL: keep the room architecture, walls, ceiling, every window and porthole, and the view seen OUTSIDE through the windows, plus the camera viewpoint and perspective, EXACTLY as in the original photo - never alter the windows or the outdoor view in any way. You MAY freely restyle, replace, rearrange, add or remove the interior FURNITURE and decor to apply this refit: " + styleClause + ". Keep it a believable luxury yacht interior. Magazine-quality, ultra detailed, professional architectural photography.";
+      const editPrompt = "Photorealistic refit of THIS exact yacht interior shown in the image. ABSOLUTE RULES, in order of priority: (1) Keep the room architecture, walls, ceiling, every window and porthole, the exact view seen OUTSIDE through the windows, and the camera viewpoint and perspective IDENTICAL to the original photo. (2) Do NOT empty or simplify the room and do NOT redesign it from scratch: every sofa, armchair, chair, table and lamp that exists in the original must still be present and in the same position in the result, UNLESS the user explicitly asks to remove that specific piece. (3) Make ONLY the changes the user lists below, nothing more. Restyle the pieces that stay (colours, fabrics, materials, finishes, lighting) as the user describes, but the room must remain fully furnished, lived-in and realistic - never a bare empty room. If the user asks to remove one specific item, remove only that one and leave every other piece in place. If the user asks to add or modernise something (e.g. lamps), do exactly that. User's requested changes: " + styleClause + ". The result must be a believable, fully-furnished luxury yacht interior, professional architectural photography, ultra detailed.";
       async function runEdit(endpoint) {
         let p = await replicateCreate(endpoint, token, { input: { prompt: editPrompt, image_input: [img] } });
         p = await replicatePoll(p, token, 90);
@@ -809,7 +817,7 @@ function BAMYachtApp() {
       React.createElement("div", { className: "modal" },
         React.createElement("div", { style: { fontFamily: G, fontSize: 22, color: "#e8dcc8", marginBottom: 8, fontWeight: 300, letterSpacing: ".05em" } }, "Impostazioni"),
         React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.4)", marginBottom: 26, lineHeight: 1.7 } },
-          "BAM Vision usa ", React.createElement("strong", { style: { color: "#c9a84c" } }, "Replicate"), " con pipeline professionale: ", React.createElement("em", null, "Flux Kontext Max"), " (preserva architettura) + ", React.createElement("em", null, "Topaz High Fidelity V2"), " 6× per output 8K"
+          "BAM Vision genera i tuoi concept refit con una pipeline AI professionale in alta definizione. Inserisci qui sotto il tuo token per attivare le generazioni."
         ),
         React.createElement("div", { className: "sn", style: { marginBottom: 8 } }, "Replicate API Token"),
         React.createElement("input", { className: "inp", type: "password", placeholder: "r8_...", value: tokenInput, onChange: (e) => setTokenInput(e.target.value), autoFocus: true }),
@@ -920,8 +928,8 @@ function BAMYachtApp() {
       ),
       busy && React.createElement("div", { style: { textAlign: "center", padding: "56px 32px", background: "rgba(255,255,255,.012)", border: "1px solid rgba(201,168,76,.07)", borderRadius: 3, marginBottom: 32 } },
         React.createElement("div", { className: "sp", style: { marginBottom: 26 } }),
-        React.createElement("div", { className: "ltxt" }, STEPS[step]),
-        React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.16)", marginTop: 10 } }, "genero piu proposte e scelgo la migliore · circa 60-120 secondi")
+        React.createElement("div", { className: "ltxt" }, PHASES[tick % PHASES.length]),
+        React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.16)", marginTop: 10 } }, "sto preparando il tuo concept refit · circa 60-120 secondi")
       ),
       result && img && React.createElement("div", { className: "rv" },
         React.createElement("div", { className: "div" }),
