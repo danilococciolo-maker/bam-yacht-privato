@@ -241,7 +241,16 @@ const FILL_ENDPOINT = "/v1/models/black-forest-labs/flux-fill-pro/predictions";
 const EDIT_ENDPOINT = "/v1/models/google/nano-banana-pro/predictions";
 const EDIT_FALLBACK_ENDPOINT = "/v1/models/google/nano-banana/predictions";
 const JUDGE_ENDPOINT = "/v1/models/google/gemini-3-flash/predictions";
-const N_SAMPLES = 4;
+const N_SAMPLES = 3;
+
+// Lancia piu lavori in parallelo ma SFALSATI di pochi ms l'uno dall'altro, cosi
+// non arrivano tutti nello stesso istante e non scatenano i 429 del token Replicate.
+function mapStaggered(items, gapMs, fn) {
+  return Promise.all(items.map((it, i) => (async () => {
+    if (i) await new Promise(r => setTimeout(r, i * gapMs));
+    return fn(it, i);
+  })()));
+}
 const WINDOW_MASK_PROMPT = "window . porthole . boat window";
 const MASK_EXPAND = 5;
 const STEPS = ["Analizzo la tua richiesta…", "Blocco le finestre e la vista esterna…", "Ridisegno divani, tavolini, illuminazione e tessuti…", "Blocco le geometrie e scelgo il risultato migliore…", "Rifinitura finale dei dettagli…"];
@@ -446,6 +455,7 @@ function BAMYachtApp() {
   const [styleLabel, setStyleLabel] = useState("Refit personalizzato");
   const [lockStatus, setLockStatus] = useState(null);
   const [removeStatus, setRemoveStatus] = useState(null);
+  const [upscaling, setUpscaling] = useState(false);
   const [removeList, setRemoveList] = useState([]);
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState(0);
@@ -574,7 +584,7 @@ function BAMYachtApp() {
     if (!img || busy) return;
     if (!token) { setShowSettings(true); return; }
     if (!refitText.trim()) { setErr("Descrivi il refit che desideri."); return; }
-    setBusy(true); setResult(null); setResultB64(null); setErr(null); setClarify(null); setStep(0); setLockStatus(null); setRemoveStatus(null); setRemoveList([]);
+    setBusy(true); setResult(null); setResultB64(null); setErr(null); setClarify(null); setStep(0); setLockStatus(null); setRemoveStatus(null); setRemoveList([]); setUpscaling(false);
     try {
       // 1) Motore di composizione: traduce la richiesta del broker in stile + materiali
       let composed = null;
@@ -681,14 +691,14 @@ function BAMYachtApp() {
         // PASSAGGIO 1 — RIMOZIONE DEDICATA: unico compito = togliere gli oggetti.
         // Con un'istruzione sola e mirata il modello obbedisce quasi sempre.
         const removalInstruction = "From this exact yacht interior photo, COMPLETELY REMOVE ONLY the following item(s) and NOTHING ELSE: " + removals.join("; ") + ". These are the ONLY pieces to delete. Do NOT remove, replace or alter any other seat, sofa, armchair, table or object, even if it is similar or right next to the one being removed." + (keeps.length ? " In particular, these pieces MUST stay fully present, untouched and in place: " + keeps.join("; ") + "." : "") + " Erase only the listed item(s) and rebuild the space they occupied as believable empty floor and the part of the room behind them, matching the existing floor, perspective, shadows and lighting. Do NOT restyle, recolour, move, rotate or add anything else: the walls, ceiling, windows, the outside view and the camera angle must stay EXACTLY as in the original. Photorealistic and seamless, as if those item(s) had never been there.";
-        const cleared = await Promise.all(Array.from({ length: N_SAMPLES }, () => runSample(removalInstruction, img)));
+        const cleared = await mapStaggered(Array.from({ length: N_SAMPLES }), 350, () => runSample(removalInstruction, img));
         // se una rimozione fallisce, ripiego sull'originale per quella proposta
         const bases = cleared.map(c => c || img);
-        // PASSAGGIO 2 — RISTILIZZO sopra l'immagine gia ripulita (in parallelo).
-        variants = (await Promise.all(bases.map(b => runSample(editPrompt, b)))).filter(Boolean);
+        // PASSAGGIO 2 — RISTILIZZO sopra l'immagine gia ripulita (in parallelo, sfalsato).
+        variants = (await mapStaggered(bases, 350, b => runSample(editPrompt, b))).filter(Boolean);
       } else {
-        // Nessuna rimozione: un solo passaggio, 4 proposte in parallelo.
-        variants = (await Promise.all(Array.from({ length: N_SAMPLES }, () => runSample(editPrompt, img)))).filter(Boolean);
+        // Nessuna rimozione: un solo passaggio, proposte in parallelo (sfalsate).
+        variants = (await mapStaggered(Array.from({ length: N_SAMPLES }), 350, () => runSample(editPrompt, img))).filter(Boolean);
       }
       if (!variants.length) throw new Error("Nessuna proposta generata. Riprova tra poco.");
 
@@ -715,10 +725,10 @@ function BAMYachtApp() {
       try {
         // Valuto TUTTE le proposte insieme (parallelo). Quando c'e una rimozione o
         // dei pezzi da tenere, il giudice verifica entrambe le cose.
-        const scored = await Promise.all(variants.map(async (v) => {
+        const scored = await mapStaggered(variants, 300, async (v) => {
           const j = await judgeVariant(v, refitText.trim(), removals, keeps, token);
           return { v: v, s: j.score, removalOk: j.removalOk };
-        }));
+        });
         // Prima le proposte che hanno OBBEDITO esattamente (tolto il giusto, tenuto il resto), poi per voto.
         scored.sort((a, b) => ((b.removalOk ? 1 : 0) - (a.removalOk ? 1 : 0)) || (b.s - a.s));
         baseOutputUrl = scored[0].v;
@@ -729,40 +739,49 @@ function BAMYachtApp() {
       } catch (_) { baseOutputUrl = variants[0]; }
 
       if (!baseOutputUrl) throw new Error("Nessun output dal modello");
+
+      // Mostro SUBITO il risultato: la proposta scelta e gia ad alta qualita.
+      // L'ingrandimento ad altissima risoluzione gira in SOTTOFONDO e, quando e
+      // pronto, scambia l'immagine in silenzio. Cosi non aspetti gli ~80s finali.
       setStep(4);
-      try {
-        const upRes = await fetch(UPSCALE_ENDPOINT, {
-          method: "POST",
-          headers: { "Authorization": "Token " + token, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            input: { image: baseOutputUrl, enhance_model: "High Fidelity V2", upscale_factor: "6x", output_format: "jpg", subject_detection: "All", face_enhancement: false }
-          })
-        });
-        if (!upRes.ok) {
-          const matched = await matchAspect(baseOutputUrl, img);
-          setResult(matched);
-          urlToDataUri(matched).then(setResultB64).catch(() => {});
-          return;
+      const previewUrl = await matchAspect(baseOutputUrl, img);
+      setResult(previewUrl);
+      urlToDataUri(previewUrl).then(setResultB64).catch(() => {});
+      setBusy(false);
+      setUpscaling(true);
+      (async () => {
+        try {
+          const upRes = await fetch(UPSCALE_ENDPOINT, {
+            method: "POST",
+            headers: { "Authorization": "Token " + token, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              input: { image: baseOutputUrl, enhance_model: "High Fidelity V2", upscale_factor: "6x", output_format: "jpg", subject_detection: "All", face_enhancement: false }
+            })
+          });
+          if (!upRes.ok) return;
+          let upscale = await upRes.json();
+          let upAttempts = 0;
+          while ((upscale.status === "starting" || upscale.status === "processing") && upAttempts < 150) {
+            await new Promise(r => setTimeout(r, 2000));
+            const upPollPath = new URL(upscale.urls.get).pathname;
+            const upPollRes = await fetch(upPollPath, { headers: { "Authorization": "Token " + token } });
+            if (!upPollRes.ok) break;
+            upscale = await upPollRes.json();
+            upAttempts++;
+          }
+          if (upscale.status === "succeeded") {
+            const rawUrl = Array.isArray(upscale.output) ? upscale.output[0] : upscale.output;
+            const finalUrl = await matchAspect(rawUrl, img);
+            setResult(finalUrl);
+            urlToDataUri(finalUrl).then(setResultB64).catch(() => {});
+          }
+        } catch (_) {
+          // Se l'ingrandimento fallisce, resta l'anteprima: nessun problema.
+        } finally {
+          setUpscaling(false);
         }
-        let upscale = await upRes.json();
-        let upAttempts = 0;
-        while ((upscale.status === "starting" || upscale.status === "processing") && upAttempts < 150) {
-          await new Promise(r => setTimeout(r, 2000));
-          const upPollPath = new URL(upscale.urls.get).pathname;
-          const upPollRes = await fetch(upPollPath, { headers: { "Authorization": "Token " + token } });
-          if (!upPollRes.ok) break;
-          upscale = await upPollRes.json();
-          upAttempts++;
-        }
-        const rawUrl = upscale.status === "succeeded" ? (Array.isArray(upscale.output) ? upscale.output[0] : upscale.output) : baseOutputUrl;
-        const finalUrl = await matchAspect(rawUrl, img);
-        setResult(finalUrl);
-        urlToDataUri(finalUrl).then(setResultB64).catch(() => {});
-      } catch (_) {
-        const matched = await matchAspect(baseOutputUrl, img);
-        setResult(matched);
-        urlToDataUri(matched).then(setResultB64).catch(() => {});
-      }
+      })();
+      return;
     } catch (e) {
       setErr(e.message || "Errore imprevisto");
     } finally {
@@ -1051,6 +1070,7 @@ function BAMYachtApp() {
         (lockStatus === "nowindows" || lockStatus === "fail") && React.createElement("div", { style: { marginBottom: 14, background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.32)", borderRadius: 3, padding: "9px 16px", color: "#d9bd6a", fontSize: 12.5, letterSpacing: ".02em", lineHeight: 1.5 } }, "Vetrate: in questo giro non ho applicato il blocco di sicurezza, ma di norma il modello mantiene comunque la vista originale. Dai un'occhiata che il panorama fuori sia quello giusto."),
         removeStatus === "ok" && React.createElement("div", { style: { marginBottom: 14, background: "rgba(80,180,120,.08)", border: "1px solid rgba(80,180,120,.28)", borderRadius: 3, padding: "9px 16px", color: "#7fc8a0", fontSize: 12.5, letterSpacing: ".02em" } }, removeList.length ? ("Rimozione eseguita: " + removeList.join(", ") + " \u2713") : "Richiesta rispettata \u2713"),
         removeStatus === "fail" && React.createElement("div", { style: { marginBottom: 14, background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.32)", borderRadius: 3, padding: "9px 16px", color: "#d9bd6a", fontSize: 12.5, letterSpacing: ".02em", lineHeight: 1.5 } }, "\u26A0 In questo giro non ho rispettato esattamente la richiesta: potrebbe aver tolto un pezzo di troppo o lasciato qualcosa che andava tolto. Rigenera, oppure indicami meglio quale pezzo \u00E8."),
+        upscaling && React.createElement("div", { style: { marginBottom: 14, color: "rgba(232,220,200,.45)", fontSize: 12, letterSpacing: ".03em", fontStyle: "italic" } }, "Alta risoluzione in preparazione in sottofondo\u2026 il render \u00E8 gi\u00E0 pronto da vedere e scaricare."),
         !compareMode ? React.createElement("div", { style: { position: "relative", borderRadius: 3, overflow: "hidden", aspectRatio: imgAspect, background: "#0b1020" } },
           React.createElement("img", { src: result, alt: "Dopo", crossOrigin: "anonymous", style: { width: "100%", height: "100%", objectFit: "cover", display: "block" } }),
           React.createElement("button", { onClick: () => setCompareMode(true), title: "Confronta prima / dopo", style: { position: "absolute", top: 12, left: 12, width: 40, height: 40, background: "rgba(8,12,24,.86)", border: "1px solid rgba(201,168,76,.5)", color: "#c9a84c", borderRadius: 3, cursor: "pointer", fontSize: 17, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" } }, "\u21D4"),
