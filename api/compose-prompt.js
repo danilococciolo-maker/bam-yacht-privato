@@ -1,71 +1,76 @@
 // ============================================================================
-//  BAM VISION — Composition Engine
+//  BAM VISION — Composition Engine (motore generico)
 //  File: api/compose-prompt.js   (Vercel serverless function)
 //
-//  Cosa fa: riceve la richiesta a parole del broker (italiano libero + preset
-//  opzionale) e chiama Claude per restituire un PROMPT TECNICO in inglese,
-//  pronto per Flux, con il GEOMETRY LOCK sempre applicato (cambia solo stile,
-//  materiali, arredi, luce — MAI l'architettura della stanza).
+//  Cosa fa: riceve la richiesta a parole del broker (italiano libero, spesso
+//  dettato con errori di trascrizione) + stanza/preset opzionali, e chiama
+//  Claude per restituire UN'ISTRUZIONE DI EDITING in inglese, chiara ed
+//  esplicita, pronta per il modello immagine. Vale per QUALSIASI stanza e per
+//  QUALSIASI operazione richiesta: ristilizzare, togliere, aggiungere,
+//  sostituire, spostare, ruotare. L'architettura della stanza resta sempre
+//  intatta (il blocco vetrate/geometrie è gestito nello stage di rendering).
 //
 //  Richiede la variabile d'ambiente su Vercel:  ANTHROPIC_API_KEY
-//  (Settings -> Environment Variables del progetto).
 //
 //  Contratto:
 //   INPUT  (POST JSON):  { userRequest, room?, stylePreset?, notes? }
-//   OUTPUT (JSON):       { ok, prompt, negative_prompt, room, style_label,
-//                          materials, confidence, clarification, model }
+//   OUTPUT (JSON):       { ok, prompt, room, style_label, materials,
+//                          confidence, clarification, model }
 // ============================================================================
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL = "claude-sonnet-4-6"; // <- per cambiare modello, modifica qui
-const MAX_TOKENS = 800;
+const MAX_TOKENS = 900;
 const TEMPERATURE = 0.4;
-const TRIGGER = "bamyacht_interior";
 
 // ----------------------------------------------------------------------------
 //  SYSTEM PROMPT — il "cervello". Questo è il pezzo da iterare nel tempo.
 // ----------------------------------------------------------------------------
-const SYSTEM_PROMPT = `You are the prompt engineer for BAM Vision, a tool that produces photorealistic "after" refit renders of luxury Italian yacht interiors. A yacht broker uploads a photo of a real interior (the "before") and describes, often in Italian and informally, how they want it restyled. Your job is to translate that request into ONE precise English technical prompt for a Flux image model, used as an image-to-image restyle of the uploaded photo.
+const SYSTEM_PROMPT = `You are the instruction engineer for BAM Vision, a tool that produces photorealistic "after" refit renders of luxury yacht interiors of ANY type: main salon, dining area, master cabin, VIP and guest cabins, lower or sky lounge, galley, bathroom, study, helm/wheelhouse interior, and so on. A yacht broker uploads a photo of a real interior and describes, usually in informal Italian (often dictated, with voice-to-text typos), the changes they want. Your job is to turn that request into ONE clear, explicit English instruction for an image-editing model that edits the uploaded photo.
 
-THE SINGLE MOST IMPORTANT RULE — GEOMETRY LOCK:
-This is a refit, not a new room. You must ALWAYS preserve the existing architecture: wall and window positions, window shapes, ceiling lines and height, room layout, proportions, perspective and camera angle. You only change: finishes, materials, wood species, upholstery, textiles, colours, furniture style, decor objects, and lighting mood. Never add or remove rooms, never move or resize windows, never change the viewpoint. Every prompt you output must end with an explicit geometry-lock clause.
+THE BROKER IS FREE TO ASK FOR ANY CHANGE TO THE CONTENTS OF THE ROOM.
+You must faithfully capture EVERY change they ask for, of any of these kinds, and express each one explicitly and unambiguously:
+- Restyle: change colours, materials, wood species, upholstery, fabrics, textiles, finishes and lighting mood of existing pieces.
+- Remove: take out a specific piece of furniture or object entirely (the area becomes matching floor/empty space).
+- Add: introduce a new piece of furniture or object.
+- Replace / swap: change one piece for a different one (e.g. classic armchair -> modern armchair).
+- Move / reposition: shift a piece left, right, forward, backward, or to another part of the room.
+- Rotate / turn: change the orientation of a piece (e.g. turn the bed to face the window).
+- Modernise a whole category (e.g. "all the lamps modern", "lighting all modern").
+Name the specific piece and the specific action for every operation. Do NOT invent changes the broker did not ask for, and do NOT drop any change they did ask for. If the broker says to remove or move something, that is a firm instruction, not a suggestion.
 
-TRIGGER WORD:
-Every prompt must begin with the exact token "${TRIGGER}," (lowercase, followed by a comma). It activates the BAM yacht-interior LoRA.
+PRESERVE (do not change unless explicitly asked): the room's architecture, wall and window positions and shapes, ceiling lines, the view seen outside the windows, the overall layout, proportions, perspective and camera angle. Mention this only briefly at the end — the rendering stage already enforces it.
 
-STYLE PRESETS (expand these into concrete materials when the broker selects or implies one):
-- "Modern Luxury": warm walnut veneer, cream and taupe upholstery, polished chrome and brushed brass accents, Calacatta marble, sculptural lamps, soft warm LED lighting.
-- "Scandinavian": pale oak and ash, white and light-grey textiles, matte finishes, clean minimal lines, bright airy natural daylight.
-- "Art Deco": dark macassar ebony, brass inlays, geometric patterns, emerald or navy velvet, mirrored panels, statement lighting.
-- "Mediterraneo": light oak, linen and cream textiles, natural travertine stone, woven rattan accents, relaxed coastal feel, warm sunlight.
-- "Contemporary Dark": smoked oak and dark walnut, charcoal and anthracite upholstery, matte black metal, dramatic low moody lighting.
-If the broker writes free text without a preset, compose directly from their description; do not force a preset.
+STYLE REFERENCES (expand into concrete materials only when the broker names or implies one):
+- Modern Luxury: warm walnut veneer, cream/taupe upholstery, polished chrome and brushed brass, Calacatta marble, sculptural lamps, soft warm LED light.
+- Scandinavian: pale oak/ash, white and light-grey textiles, matte finishes, clean lines, bright daylight.
+- Art Deco: macassar ebony, brass inlays, geometric patterns, emerald/navy velvet, mirrored panels.
+- Mediterraneo: light oak, linen/cream textiles, travertine stone, rattan accents, warm coastal light.
+- Contemporary Dark: smoked oak/dark walnut, charcoal upholstery, matte black metal, moody low lighting.
+If the broker writes free text without a preset, compose directly from their words — do not force a preset.
 
 TRANSLATION RULES:
-- Read Italian (with possible voice-to-text typos) and output English.
+- Read informal Italian with possible typos and output English.
 - Turn vague words into specific, photographable materials and colours (e.g. "elegante e caldo" -> "warm walnut, cream leather, brushed brass, soft ambient lighting").
-- Keep the prompt concise and directive (roughly 40-70 words in the description part), photorealistic, editorial yacht aesthetic.
-- If a room type is given or clearly implied, name it (main salon, master cabin, VIP cabin, guest cabin, galley, bathroom, dining area). Otherwise use "yacht interior".
+- Write the instruction as a short, ordered sequence of concrete operations (imperative voice), roughly 40-100 words. Be directive and unambiguous, especially for removals and repositioning (e.g. "Remove the rear-facing sofa in the centre; keep the other three sofas in place").
+- Use the room type if it is stated or clearly implied (master cabin, VIP cabin, galley, etc.); otherwise use "yacht interior".
 
-ALWAYS AVOID (put in negative_prompt): people, text, watermark, logo, brand names, deformed or distorted furniture, warped or relocated windows, extra rooms, heavy clutter, cartoon, illustration, lowres, oversaturated.
-
-OUTPUT FORMAT — respond with ONE valid JSON object and NOTHING else. No markdown, no backticks, no commentary. Schema:
+OUTPUT — respond with ONE valid JSON object and NOTHING else. No markdown, no backticks, no commentary. Schema:
 {
-  "prompt": "string, starts with '${TRIGGER},', includes the style/materials/furniture/lighting AND ends with the geometry-lock clause",
-  "negative_prompt": "string",
+  "prompt": "the clean English edit instruction: the explicit, ordered list of every change the broker wants (restyle and/or remove/add/move/rotate/swap), in concrete photographable terms, ending with a short note to keep the architecture, windows and viewpoint unchanged",
   "room": "string",
-  "style_label": "short human label, e.g. 'Modern Luxury'",
-  "materials": ["3-6 short material/palette terms, for the client PDF, e.g. 'walnut veneer', 'cream leather', 'Calacatta marble'"],
+  "style_label": "short human label for the look, e.g. 'Modern Luxury' or 'Custom Refit'",
+  "materials": ["3-6 short material/palette terms for the client PDF, e.g. 'walnut veneer', 'cream leather'"],
   "confidence": "high | medium | low",
-  "clarification": "empty string, OR a short question in Italian if the request is too vague to compose well"
+  "clarification": "empty string, OR a short question in Italian if the request is genuinely too vague to act on"
 }
 
-If the request is empty or off-topic (not a yacht-interior refit), set confidence to "low", put a brief Italian clarification, and still return a safe generic prompt.
+If the request is empty or clearly not about a yacht interior, set confidence to "low", add a short Italian clarification, and still return a safe generic restyle instruction.
 
 EXAMPLE
-Broker input: "Salone, lo voglio moderno e luxury, toni caldi, divani crema, mi raccomando lascia le finestre come sono"
+Broker input: "Nella cabina armatoriale gira il letto verso la finestra, togli la poltrona vicino alla porta, mettimi tutto sui toni crema e legno chiaro, lampade moderne"
 Your output:
-{"prompt":"${TRIGGER}, luxury yacht main salon restyled in modern luxury, warm walnut veneer panelling, cream leather sofas, taupe accents, brushed brass details, Calacatta marble surfaces, soft warm ambient lighting, photorealistic editorial interior, preserving the existing architecture, wall and window positions, window shapes, ceiling lines, room layout, proportions, perspective and camera angle unchanged","negative_prompt":"people, text, watermark, logo, brand names, deformed furniture, distorted or relocated windows, extra rooms, clutter, cartoon, illustration, lowres, oversaturated","room":"main salon","style_label":"Modern Luxury","materials":["walnut veneer","cream leather","brushed brass","Calacatta marble","warm ambient lighting"],"confidence":"high","clarification":""}`;
+{"prompt":"Master cabin refit. Rotate the bed so its headboard faces the window. Remove the armchair next to the door entirely and leave matching floor in its place. Keep every other piece of furniture where it is. Restyle all surfaces, upholstery and textiles in cream tones with light wood veneer. Replace all lamps with modern designs. Keep the architecture, window positions, the outside view, layout and camera viewpoint unchanged.","room":"master cabin","style_label":"Cream & Light Wood","materials":["light wood veneer","cream upholstery","modern lamps","soft warm lighting"],"confidence":"high","clarification":""}`;
 
 // ----------------------------------------------------------------------------
 //  Helpers
@@ -75,9 +80,7 @@ Your output:
 function extractJson(text) {
   if (!text) return null;
   let t = text.trim();
-  // togli eventuali fence ```json ... ```
   t = t.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
-  // se c'è testo intorno, prendi dal primo { all'ultimo }
   const start = t.indexOf("{");
   const end = t.lastIndexOf("}");
   if (start !== -1 && end !== -1 && end > start) {
@@ -91,30 +94,27 @@ function extractJson(text) {
 }
 
 // Prompt di emergenza: se Claude fallisce o non torna JSON valido, la pipeline
-// non deve mai bloccarsi. Costruiamo un prompt minimo dagli input grezzi.
+// non deve mai bloccarsi. Costruiamo un'istruzione minima dagli input grezzi.
 function fallbackComposition({ userRequest, room, stylePreset }) {
   const roomTxt = (room && String(room).trim()) || "yacht interior";
   const styleTxt = (stylePreset && String(stylePreset).trim())
-    ? `, ${String(stylePreset).trim()} style`
+    ? ` in ${String(stylePreset).trim()} style`
     : "";
   const reqTxt = (userRequest && String(userRequest).trim())
-    ? `, ${String(userRequest).trim()}`
-    : "";
+    ? String(userRequest).trim()
+    : "restyle it in a refined, modern luxury look";
   return {
     prompt:
-      `${TRIGGER}, luxury yacht ${roomTxt} restyled${styleTxt}${reqTxt}, ` +
-      `photorealistic editorial interior, preserving the existing architecture, ` +
-      `wall and window positions, window shapes, ceiling lines, room layout, ` +
-      `proportions, perspective and camera angle unchanged`,
-    negative_prompt:
-      "people, text, watermark, logo, brand names, deformed furniture, " +
-      "distorted or relocated windows, extra rooms, clutter, cartoon, illustration, lowres, oversaturated",
+      `Refit of the ${roomTxt}${styleTxt}: ${reqTxt}. ` +
+      `Carry out exactly the changes described above and nothing else; ` +
+      `keep every other piece of furniture in place. ` +
+      `Keep the architecture, window positions, the outside view, layout and camera viewpoint unchanged.`,
     room: roomTxt,
-    style_label: stylePreset || "Custom",
+    style_label: stylePreset || "Custom Refit",
     materials: [],
     confidence: "low",
     clarification:
-      "Non sono riuscito a elaborare la richiesta in modo ottimale: riprova con qualche dettaglio in più su stile, materiali e colori.",
+      "Non sono riuscito a elaborare la richiesta in modo ottimale: riprova con qualche dettaglio in più su cosa cambiare, togliere o spostare.",
   };
 }
 
@@ -166,7 +166,7 @@ export default async function handler(req, res) {
 
   // Costruzione del messaggio per Claude
   const userMessage =
-    `Broker request (Italian, restyle the uploaded yacht interior photo):\n` +
+    `Broker request (informal Italian) to edit the uploaded yacht interior photo:\n` +
     (room ? `Room: ${room}\n` : "") +
     (stylePreset ? `Selected style preset: ${stylePreset}\n` : "") +
     (userRequest ? `Description: ${userRequest}\n` : "") +
@@ -194,13 +194,12 @@ export default async function handler(req, res) {
 
     if (!r.ok) {
       const errText = await r.text().catch(() => "");
-      // Anthropic ha risposto con errore: torniamo il fallback (pipeline mai bloccata)
       const fb = fallbackComposition({ userRequest, room, stylePreset });
       return res.status(200).json({
         ok: true,
         ...fb,
         model: MODEL,
-        warning: `Anthropic API error (${r.status}). Uso prompt di fallback. ${errText.slice(0, 300)}`,
+        warning: `Anthropic API error (${r.status}). Uso istruzione di fallback. ${errText.slice(0, 300)}`,
       });
     }
 
@@ -211,7 +210,7 @@ export default async function handler(req, res) {
       ok: true,
       ...fb,
       model: MODEL,
-      warning: `Errore di rete verso Anthropic: ${err && err.message ? err.message : "unknown"}. Uso prompt di fallback.`,
+      warning: `Errore di rete verso Anthropic: ${err && err.message ? err.message : "unknown"}. Uso istruzione di fallback.`,
     });
   }
 
@@ -227,24 +226,15 @@ export default async function handler(req, res) {
       ok: true,
       ...fb,
       model: MODEL,
-      warning: "Risposta del modello non in formato JSON valido. Uso prompt di fallback.",
+      warning: "Risposta del modello non in formato JSON valido. Uso istruzione di fallback.",
     });
-  }
-
-  // Garanzie minime sull'output
-  let prompt = String(parsed.prompt).trim();
-  if (!prompt.toLowerCase().startsWith(TRIGGER)) {
-    prompt = `${TRIGGER}, ${prompt}`;
   }
 
   return res.status(200).json({
     ok: true,
-    prompt,
-    negative_prompt:
-      parsed.negative_prompt ||
-      "people, text, watermark, logo, deformed furniture, distorted windows, extra rooms, clutter, cartoon, lowres",
+    prompt: String(parsed.prompt).trim(),
     room: parsed.room || room || "yacht interior",
-    style_label: parsed.style_label || stylePreset || "Custom",
+    style_label: parsed.style_label || stylePreset || "Custom Refit",
     materials: Array.isArray(parsed.materials) ? parsed.materials : [],
     confidence: parsed.confidence || "medium",
     clarification: parsed.clarification || "",
