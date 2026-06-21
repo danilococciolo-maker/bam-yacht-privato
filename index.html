@@ -70,6 +70,7 @@ footer{border-top:1px solid rgba(201,168,76,.07);padding:24px 20px;text-align:ce
   window.supabaseClient = supabaseClient;
 
   (async function authGate() {
+    if (new URLSearchParams(location.search).has('s')) return; // pagina pubblica: niente login
     const { data: { session } } = await supabaseClient.auth.getSession();
     if (!session) {
       showLoginGate();
@@ -532,6 +533,10 @@ function BAMYachtApp() {
   const [pdfTitle, setPdfTitle] = useState("");          // titolo del dossier da comporre
   const [composing, setComposing] = useState(false);     // PDF in creazione
   const [resumeJob, setResumeJob] = useState(null);       // lavoro interrotto da riprendere a mano
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareLink, setShareLink] = useState(null);
+  const [shareErr, setShareErr] = useState(null);
+  const [shareCopied, setShareCopied] = useState(false);
   const isAdmin = ADMIN_EMAILS.indexOf((userEmail || "").trim().toLowerCase()) !== -1;
   const updateYacht = (k, v) => setYacht(prev => Object.assign({}, prev, { [k]: v }));
   const fileRef = useRef();
@@ -1224,6 +1229,45 @@ function BAMYachtApp() {
       setComposing(false);
     }
   }
+  async function createShare(selRooms, title) {
+    const rooms = (selRooms || []).filter(Boolean);
+    if (!rooms.length) return;
+    setShareBusy(true); setShareErr(null); setShareLink(null); setShareCopied(false);
+    try {
+      const sess = await supabaseClient.auth.getSession();
+      const uid = sess && sess.data && sess.data.session && sess.data.session.user && sess.data.session.user.id;
+      if (!uid) { setShareErr("Sessione scaduta: rientra e riprova."); setShareBusy(false); return; }
+      const shareId = uuidv4();
+      const PUB = "public-shares";
+      const payload = [];
+      for (let i = 0; i < rooms.length; i++) {
+        const r = rooms[i];
+        const bBlob = r.before_signed ? await blobFromAny(r.before_signed) : null;
+        const aBlob = r.after_signed ? await blobFromAny(r.after_signed) : null;
+        let before_url = null, after_url = null;
+        if (bBlob) {
+          const p = uid + "/" + shareId + "/" + i + "_b.jpg";
+          const up = await supabaseClient.storage.from(PUB).upload(p, bBlob, { contentType: "image/jpeg", upsert: true });
+          if (up.error) throw up.error;
+          before_url = supabaseClient.storage.from(PUB).getPublicUrl(p).data.publicUrl;
+        }
+        if (aBlob) {
+          const p = uid + "/" + shareId + "/" + i + "_a.jpg";
+          const up = await supabaseClient.storage.from(PUB).upload(p, aBlob, { contentType: "image/jpeg", upsert: true });
+          if (up.error) throw up.error;
+          after_url = supabaseClient.storage.from(PUB).getPublicUrl(p).data.publicUrl;
+        }
+        payload.push({ label: r.label || ("Ambiente " + (i + 1)), caption: r.caption || "", before_url: before_url, after_url: after_url });
+      }
+      const ins = await supabaseClient.from("shares").insert({ id: shareId, broker_id: uid, title: (title && title.trim()) || "Proposta di refit", rooms: payload });
+      if (ins.error) throw ins.error;
+      setShareLink(location.origin + "/?s=" + shareId);
+    } catch (e) {
+      setShareErr("Creazione link non riuscita: " + (e && e.message ? e.message : e));
+    } finally {
+      setShareBusy(false);
+    }
+  }
   async function openArchive() {
     setShowArchive(true);
     if (archive === null) loadArchive();
@@ -1326,7 +1370,10 @@ function BAMYachtApp() {
                         React.createElement("div", { style: { fontFamily: G, fontSize: 18, color: "#e8dcc8" } }, r.label || "Ambiente"),
                         React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.4)", marginTop: 2, letterSpacing: ".04em" } }, sub)
                       ),
-                      React.createElement("button", { className: "sbtn", onClick: () => setArchiveOpen(null) }, "Chiudi")
+                      React.createElement("div", { style: { display: "flex", gap: 8 } },
+                        React.createElement("button", { className: "sbtn", onClick: () => createShare([r], r.label || r.dossierTitle), disabled: shareBusy }, shareBusy ? "Creo link\u2026" : "\uD83D\uDD17 Link"),
+                        React.createElement("button", { className: "sbtn", onClick: () => setArchiveOpen(null) }, "Chiudi")
+                      )
                     ),
                     React.createElement("div", { style: { padding: 12 } },
                       React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 } },
@@ -1350,11 +1397,30 @@ function BAMYachtApp() {
           React.createElement("input", { className: "inp", type: "text", placeholder: "Titolo del dossier (es. M/Y SISA)", value: pdfTitle, onChange: (e) => setPdfTitle(e.target.value) }),
           React.createElement("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" } },
             React.createElement("button", { className: "sbtn", onClick: () => setSelected([]), disabled: !selected.length }, "Deseleziona"),
+            React.createElement("button", { className: "sbtn", onClick: () => { const map = {}; (archive || []).forEach(function (x) { map[x.id] = x; }); const rs = selected.map(function (id) { return map[id]; }).filter(Boolean); if (rs.length) createShare(rs, pdfTitle); }, disabled: shareBusy || selected.length === 0 }, shareBusy ? "Creo link\u2026" : "\uD83D\uDD17 Crea link"),
             React.createElement("button", { className: "pbtn", onClick: () => { const map = {}; (archive || []).forEach(function (x) { map[x.id] = x; }); const rs = selected.map(function (id) { return map[id]; }).filter(Boolean); if (rs.length) composePDF(rs, pdfTitle); }, disabled: composing || selected.length === 0 }, composing ? "Creazione PDF\u2026" : "\u2193 Crea PDF (" + selected.length + ")")
           )
         ),
         !selMode && React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: 24 } },
           React.createElement("button", { className: "pbtn", onClick: () => setShowArchive(false) }, "Chiudi")
+        )
+      )
+    ),
+    (shareBusy || shareLink || shareErr) && React.createElement("div", { className: "modal-bg", onClick: (e) => { if (e.target.classList.contains("modal-bg")) { setShareLink(null); setShareErr(null); } } },
+      React.createElement("div", { className: "modal", style: { maxWidth: 520 } },
+        React.createElement("div", { style: { fontFamily: G, fontSize: 22, color: "#e8dcc8", marginBottom: 6, fontWeight: 300, letterSpacing: ".05em" } }, "Link per il cliente"),
+        shareBusy && React.createElement("div", { style: { color: "rgba(232,220,200,.6)", fontSize: 14, padding: "16px 0" } }, "Preparo il link\u2026"),
+        shareErr && React.createElement("div", { style: { color: "#e08a7a", fontSize: 13, padding: "12px 0", lineHeight: 1.5 } }, shareErr),
+        shareLink && React.createElement("div", null,
+          React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.5)", marginBottom: 16, lineHeight: 1.6 } }, "Chiunque abbia questo link vede il prima/dopo, senza bisogno di registrarsi. Copialo e invialo al tuo cliente."),
+          React.createElement("input", { className: "inp", type: "text", readOnly: true, value: shareLink, onFocus: (e) => e.target.select(), style: { marginBottom: 14, fontSize: 13 } }),
+          React.createElement("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" } },
+            React.createElement("button", { className: "sbtn", onClick: () => { window.open(shareLink, "_blank"); } }, "Apri"),
+            React.createElement("button", { className: "pbtn", onClick: () => { try { navigator.clipboard.writeText(shareLink); setShareCopied(true); setTimeout(() => setShareCopied(false), 2000); } catch (_) {} } }, shareCopied ? "Copiato \u2713" : "Copia link")
+          )
+        ),
+        React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: 20 } },
+          React.createElement("button", { className: "sbtn", onClick: () => { setShareLink(null); setShareErr(null); } }, "Chiudi")
         )
       )
     ),
@@ -1514,8 +1580,70 @@ function BAMYachtApp() {
   );
 }
 
+function ShareView({ shareId }) {
+  const G2 = "'Cormorant Garamond', Georgia, serif";
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data: row, error } = await window.supabaseClient.from("shares").select("title,rooms,created_at").eq("id", shareId).single();
+        if (error) throw error;
+        if (active) setData(row);
+      } catch (e) {
+        if (active) setErr("Link non trovato o non più disponibile.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [shareId]);
+
+  const rooms = (data && Array.isArray(data.rooms)) ? data.rooms : [];
+  const dt = data && data.created_at ? new Date(data.created_at).toLocaleDateString("it-IT", { day: "2-digit", month: "long", year: "numeric" }) : "";
+  return React.createElement("div", { style: { minHeight: "100vh", background: "#1a2540", color: "#e8dcc8", padding: "0 0 64px" } },
+    React.createElement("div", { style: { textAlign: "center", padding: "40px 20px 30px", borderBottom: "1px solid rgba(201,168,76,.15)" } },
+      window.__LOGO_WHITE__ && React.createElement("img", { src: window.__LOGO_WHITE__, alt: "BAM", style: { height: 48, marginBottom: 14 } }),
+      React.createElement("div", { style: { fontFamily: G2, fontSize: 12, letterSpacing: ".34em", color: "#c9a84c", textTransform: "uppercase" } }, "BAM Vision · Concept Refit")
+    ),
+    React.createElement("div", { style: { maxWidth: 1100, margin: "0 auto", padding: "0 20px" } },
+      loading && React.createElement("div", { style: { textAlign: "center", padding: "60px 0", color: "rgba(232,220,200,.55)", fontSize: 16 } }, "Caricamento…"),
+      err && React.createElement("div", { style: { textAlign: "center", padding: "60px 0", color: "rgba(232,220,200,.6)", fontSize: 16 } }, err),
+      !loading && !err && React.createElement("div", null,
+        React.createElement("div", { style: { textAlign: "center", padding: "36px 0 26px" } },
+          React.createElement("div", { style: { fontFamily: G2, fontSize: "clamp(26px,5vw,40px)", fontWeight: 300, color: "#e8dcc8", letterSpacing: ".02em" } }, (data && data.title) || "Proposta di refit"),
+          dt && React.createElement("div", { style: { fontSize: 12, color: "rgba(232,220,200,.4)", marginTop: 8, letterSpacing: ".06em" } }, dt)
+        ),
+        rooms.map(function (r, i) {
+          return React.createElement("div", { key: i, style: { marginBottom: 40 } },
+            React.createElement("div", { style: { fontFamily: G2, fontSize: 20, color: "#c9a84c", marginBottom: 12, letterSpacing: ".03em" } }, (r.label || ("Ambiente " + (i + 1)))),
+            React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 4 } },
+              React.createElement("div", { style: { position: "relative" } },
+                React.createElement("img", { src: r.before_url, alt: "Prima", style: { width: "100%", display: "block", borderRadius: 2, background: "#0b1020" } }),
+                React.createElement("div", { style: { position: "absolute", top: 10, left: 10, background: "rgba(8,12,24,.74)", padding: "4px 12px", fontSize: 10, letterSpacing: ".18em", color: "rgba(232,220,200,.8)", textTransform: "uppercase", borderRadius: 2 } }, "Prima")
+              ),
+              React.createElement("div", { style: { position: "relative" } },
+                React.createElement("img", { src: r.after_url, alt: "Dopo", style: { width: "100%", display: "block", borderRadius: 2, background: "#0b1020" } }),
+                React.createElement("div", { style: { position: "absolute", top: 10, left: 10, background: "rgba(201,168,76,.9)", padding: "4px 12px", fontSize: 10, letterSpacing: ".16em", color: "#1a2540", textTransform: "uppercase", borderRadius: 2, fontWeight: 600 } }, "Dopo")
+              )
+            ),
+            r.caption && React.createElement("div", { style: { fontSize: 14, color: "rgba(232,220,200,.6)", marginTop: 12, lineHeight: 1.6, fontFamily: "'Crimson Text', Georgia, serif" } }, r.caption)
+          );
+        }),
+        React.createElement("div", { style: { textAlign: "center", padding: "30px 0 0", borderTop: "1px solid rgba(201,168,76,.12)", marginTop: 30 } },
+          React.createElement("div", { style: { fontSize: 11.5, color: "rgba(232,220,200,.38)", lineHeight: 1.6, maxWidth: 620, margin: "0 auto" } }, "Concept generati con intelligenza artificiale a partire dalle foto reali dell'imbarcazione. Render indicativi, non rappresentano un progetto esecutivo."),
+          React.createElement("div", { style: { fontFamily: G2, fontSize: 13, letterSpacing: ".28em", color: "rgba(201,168,76,.6)", textTransform: "uppercase", marginTop: 18 } }, "BAM Vision")
+        )
+      )
+    )
+  );
+}
+
 const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(React.createElement(BAMYachtApp));
+const __shareId = new URLSearchParams(location.search).get("s");
+root.render(React.createElement(__shareId ? ShareView : BAMYachtApp, __shareId ? { shareId: __shareId } : null));
 </script>
 </body>
 </html>
