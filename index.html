@@ -502,15 +502,11 @@ function BAMYachtApp() {
   const [archive, setArchive] = useState(null);          // null = mai caricato, [] = vuoto
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [archiveErr, setArchiveErr] = useState(null);
-  const [archiveOpen, setArchiveOpen] = useState(null);  // id dossier espanso nel confronto
-  const [showSaveDlg, setShowSaveDlg] = useState(false);
-  const [saveMode, setSaveMode] = useState("new");       // "new" | "existing"
-  const [saveTitle, setSaveTitle] = useState("");
-  const [saveRecipient, setSaveRecipient] = useState("");
-  const [saveRoomLabel, setSaveRoomLabel] = useState("");
-  const [saveTargetId, setSaveTargetId] = useState("");
-  const [myDossiers, setMyDossiers] = useState([]);      // [{id,title}] per il menu a tendina
-  const [pdfDossierId, setPdfDossierId] = useState(null);// id dossier in esportazione PDF
+  const [archiveOpen, setArchiveOpen] = useState(null);  // id render espanso nel confronto
+  const [selMode, setSelMode] = useState(false);         // modalità selezione attiva
+  const [selected, setSelected] = useState([]);          // id render selezionati (in ordine)
+  const [pdfTitle, setPdfTitle] = useState("");          // titolo del dossier da comporre
+  const [composing, setComposing] = useState(false);     // PDF in creazione
   const isAdmin = ADMIN_EMAILS.indexOf((userEmail || "").trim().toLowerCase()) !== -1;
   const updateYacht = (k, v) => setYacht(prev => Object.assign({}, prev, { [k]: v }));
   const fileRef = useRef();
@@ -1026,48 +1022,14 @@ function BAMYachtApp() {
     if (String(src).startsWith("data:")) return dataUrlToBlob(src);
     const r = await fetch(src); return await r.blob();
   }
-  async function loadDossierList() {
-    try {
-      const { data } = await supabaseClient.from("dossiers").select("id,title,created_at").order("created_at", { ascending: false });
-      setMyDossiers(data || []);
-    } catch (_) { setMyDossiers([]); }
-  }
-  function openSaveDialog() {
-    if (!img || !result) return;
-    const defTitle = (yacht.modello || yacht.cantiere)
-      ? [yacht.cantiere, yacht.modello].filter(Boolean).join(" ")
-      : ("Refit " + new Date().toLocaleDateString("it-IT"));
-    setSaveTitle(defTitle);
-    setSaveRecipient("");
-    setSaveRoomLabel(room || styleLabel || "Ambiente");
-    setSaveMode("new");
-    setSaveTargetId("");
-    setSaveStatus(null); setErr(null);
-    loadDossierList();
-    setShowSaveDlg(true);
-  }
-  async function confirmSave() {
+  async function saveToArchive() {
     if (!img || !result) return;
     setSaveStatus("saving"); setErr(null);
     try {
       const sess = await supabaseClient.auth.getSession();
       const uid = sess && sess.data && sess.data.session && sess.data.session.user && sess.data.session.user.id;
       if (!uid) { setSaveStatus("error"); setErr("Sessione scaduta: rientra e riprova."); return; }
-      let dossierId, position = 0;
-      if (saveMode === "existing" && saveTargetId) {
-        dossierId = saveTargetId;
-        const cnt = await supabaseClient.from("dossier_rooms").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId);
-        position = cnt && cnt.count ? cnt.count : 0;
-      } else {
-        dossierId = uuidv4();
-        const titolo = saveTitle.trim() || ("Refit " + new Date().toLocaleDateString("it-IT"));
-        const insD = await supabaseClient.from("dossiers").insert({
-          id: dossierId, broker_id: uid, title: titolo, client_recipient: saveRecipient.trim() || null,
-          yacht_name: titolo, yacht_builder: yacht.cantiere || null, yacht_model: yacht.modello || null, status: "ready",
-          metadata: { anno: yacht.anno || null, ore_motore: yacht.oreMotore || null }
-        });
-        if (insD.error) throw insD.error;
-      }
+      const dossierId = uuidv4();
       const roomId = uuidv4();
       const prefix = uid + "/" + dossierId + "/" + roomId + "/";
       const beforeBlob = await blobFromAny(img);
@@ -1076,13 +1038,12 @@ function BAMYachtApp() {
       if (up1.error) throw up1.error;
       const up2 = await supabaseClient.storage.from(BUCKET).upload(prefix + "after.jpg", afterBlob, { contentType: "image/jpeg", upsert: true });
       if (up2.error) throw up2.error;
-      const insR = await supabaseClient.from("dossier_rooms").insert({
-        id: roomId, dossier_id: dossierId, position: position,
-        label: saveRoomLabel.trim() || styleLabel || "Ambiente", caption: refitText.trim(),
-        before_path: prefix + "before.jpg", after_path: prefix + "after.jpg", metadata: { style_label: styleLabel }
-      });
+      const titolo = (yacht.modello || yacht.cantiere) ? [yacht.cantiere, yacht.modello].filter(Boolean).join(" ") : ("Refit " + new Date().toLocaleDateString("it-IT"));
+      const insD = await supabaseClient.from("dossiers").insert({ id: dossierId, broker_id: uid, title: titolo, yacht_name: titolo, yacht_builder: yacht.cantiere || null, yacht_model: yacht.modello || null, status: "ready", metadata: { anno: yacht.anno || null } });
+      if (insD.error) throw insD.error;
+      const insR = await supabaseClient.from("dossier_rooms").insert({ id: roomId, dossier_id: dossierId, position: 0, label: room || styleLabel || "Ambiente", caption: refitText.trim(), before_path: prefix + "before.jpg", after_path: prefix + "after.jpg", metadata: { style_label: styleLabel } });
       if (insR.error) throw insR.error;
-      setSaveStatus("saved"); setShowSaveDlg(false); setArchive(null);
+      setSaveStatus("saved"); setArchive(null);
     } catch (e) {
       setSaveStatus("error"); setErr("Salvataggio non riuscito: " + (e && e.message ? e.message : e));
     }
@@ -1103,33 +1064,33 @@ function BAMYachtApp() {
       return await new Promise(function (res, rej) { const r = new FileReader(); r.onload = function () { res(r.result); }; r.onerror = rej; r.readAsDataURL(b); });
     } catch (_) { return null; }
   }
-  async function downloadDossierPDF(d) {
-    if (!window.jspdf) return;
-    setPdfDossierId(d.id);
+  async function composePDF(selRooms, title) {
+    if (!window.jspdf) { setErr("PDF non pronto, ricarica la pagina."); return; }
+    setComposing(true);
     try {
       let logoDataUrl = null;
       try {
         const lb = await (await fetch(window.__LOGO_WHITE__)).blob();
         logoDataUrl = await new Promise(function (res, rej) { const r = new FileReader(); r.onload = function () { res(r.result); }; r.onerror = rej; r.readAsDataURL(lb); });
       } catch (_) {}
-      const rooms = (d.dossier_rooms || []).slice().sort(function (a, b) { return (a.position || 0) - (b.position || 0); });
+      const rooms = (selRooms || []).slice();
       for (let i = 0; i < rooms.length; i++) {
         rooms[i]._b = await loadImgRatio(await urlToData(rooms[i].before_signed));
         rooms[i]._a = await loadImgRatio(await urlToData(rooms[i].after_signed));
       }
+      const docTitle = (title && title.trim()) ? title.trim() : ("Dossier " + new Date().toLocaleDateString("it-IT"));
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
       const W = 297, H = 210;
-      const date = new Date(d.created_at || Date.now()).toLocaleDateString("it-IT", { day: "2-digit", month: "long", year: "numeric" });
+      const date = new Date().toLocaleDateString("it-IT", { day: "2-digit", month: "long", year: "numeric" });
       // COPERTINA
       doc.setFillColor(8, 12, 24); doc.rect(0, 0, W, H, "F");
       if (logoDataUrl) { try { doc.addImage(logoDataUrl, "PNG", W / 2 - 22, 60, 44, 16); } catch (_) {} }
       doc.setTextColor(232, 220, 200); doc.setFontSize(9);
       doc.text("BAM VISION · DOSSIER DI TRASFORMAZIONE INTERNI", W / 2, 94, { align: "center" });
       doc.setFontSize(26); doc.setTextColor(232, 220, 200);
-      doc.text(d.title || "Dossier", W / 2, 114, { align: "center" });
+      doc.text(docTitle, W / 2, 114, { align: "center" });
       doc.setDrawColor(201, 168, 76); doc.setLineWidth(0.4); doc.line(W / 2 - 28, 122, W / 2 + 28, 122);
-      if (d.client_recipient) { doc.setFontSize(11); doc.setTextColor(201, 168, 76); doc.text("Predisposto per " + d.client_recipient, W / 2, 134, { align: "center" }); }
       doc.setFontSize(9); doc.setTextColor(180, 170, 140);
       doc.text(rooms.length + (rooms.length === 1 ? " ambiente · " : " ambienti · ") + date, W / 2, 146, { align: "center" });
       doc.setFontSize(7); doc.setTextColor(110, 100, 80);
@@ -1173,14 +1134,14 @@ function BAMYachtApp() {
         }
         doc.setDrawColor(201, 168, 76); doc.setLineWidth(0.12); doc.line(12, H - 12, W - 12, H - 12);
         doc.setFontSize(6.5); doc.setTextColor(180, 170, 140);
-        doc.text("BAM VISION · " + (d.title || "DOSSIER").toUpperCase(), 12, H - 6);
+        doc.text("BAM VISION · " + docTitle.toUpperCase(), 12, H - 6);
         doc.text(("0" + (i + 1)).slice(-2), W - 12, H - 6, { align: "right" });
       });
-      doc.save("BAM_Vision_" + (d.title || "Dossier").replace(/[^\w\-]+/g, "_") + ".pdf");
+      doc.save("BAM_Vision_" + docTitle.replace(/[^\w\-]+/g, "_") + ".pdf");
     } catch (e) {
       setErr("Errore PDF dossier: " + (e && e.message ? e.message : e));
     } finally {
-      setPdfDossierId(null);
+      setComposing(false);
     }
   }
   async function openArchive() {
@@ -1192,7 +1153,7 @@ function BAMYachtApp() {
     try {
       const { data, error } = await supabaseClient
         .from("dossiers")
-        .select("id,title,yacht_name,created_at,status,dossier_rooms(label,caption,before_path,after_path,position)")
+        .select("id,title,yacht_name,created_at,status,dossier_rooms(id,label,caption,before_path,after_path,position)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       const items = data || [];
@@ -1203,8 +1164,17 @@ function BAMYachtApp() {
         const sg = await supabaseClient.storage.from(BUCKET).createSignedUrls(paths, 3600);
         (sg.data || []).forEach(function (s) { if (s && s.path && s.signedUrl) signed[s.path] = s.signedUrl; });
       }
-      items.forEach(function (d) { (d.dossier_rooms || []).forEach(function (r) { r.before_signed = signed[r.before_path]; r.after_signed = signed[r.after_path]; }); });
-      setArchive(items);
+      const flat = [];
+      items.forEach(function (d) {
+        (d.dossier_rooms || []).forEach(function (r) {
+          flat.push({
+            id: r.id, label: r.label, caption: r.caption,
+            before_signed: signed[r.before_path], after_signed: signed[r.after_path],
+            dossierTitle: d.title, created_at: d.created_at
+          });
+        });
+      });
+      setArchive(flat);
     } catch (e) {
       setArchiveErr(e && e.message ? e.message : String(e));
     } finally {
@@ -1213,7 +1183,6 @@ function BAMYachtApp() {
   }
 
   const G = "'Cormorant Garamond', Georgia, serif";
-  const tabStyle = (active) => ({ flex: 1, padding: "10px 8px", borderRadius: 2, cursor: "pointer", fontFamily: G, fontSize: 13, letterSpacing: ".06em", border: "1px solid " + (active ? "#c9a84c" : "rgba(201,168,76,.2)"), background: active ? "rgba(201,168,76,.12)" : "transparent", color: active ? "#c9a84c" : "rgba(232,220,200,.5)" });
 
   return React.createElement("div", null,
     React.createElement("header", null,
@@ -1244,99 +1213,68 @@ function BAMYachtApp() {
     ),
     showArchive && React.createElement("div", { className: "modal-bg", onClick: (e) => { if (e.target.classList.contains("modal-bg")) setShowArchive(false); } },
       React.createElement("div", { className: "modal", style: { maxWidth: 760, maxHeight: "84vh", overflowY: "auto" } },
-        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 } },
+        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6, flexWrap: "wrap", gap: 10 } },
           React.createElement("div", { style: { fontFamily: G, fontSize: 22, color: "#e8dcc8", fontWeight: 300, letterSpacing: ".05em" } }, "I miei dossier"),
-          React.createElement("button", { className: "sbtn", onClick: () => { setArchive(null); loadArchive(); }, disabled: archiveBusy }, "Aggiorna")
+          React.createElement("div", { style: { display: "flex", gap: 8 } },
+            archive && archive.length > 0 && React.createElement("button", { className: selMode ? "pbtn" : "sbtn", onClick: () => { setSelMode(!selMode); setSelected([]); setArchiveOpen(null); } }, selMode ? "Annulla selezione" : "\u2713 Seleziona"),
+            React.createElement("button", { className: "sbtn", onClick: () => { setArchive(null); setSelected([]); loadArchive(); }, disabled: archiveBusy }, "Aggiorna")
+          )
         ),
-        React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.4)", marginBottom: 22, lineHeight: 1.6 } }, "I render che salvi restano qui, nel tuo archivio privato."),
+        React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.4)", marginBottom: 22, lineHeight: 1.6 } }, selMode ? "Tocca i render che vuoi includere, poi premi \u00ABCrea PDF\u00BB in fondo." : "Tocca un render per il confronto. Premi \u00ABSeleziona\u00BB per comporre un dossier da pi\u00F9 render."),
         archiveBusy && React.createElement("div", { style: { color: "rgba(232,220,200,.5)", fontSize: 14, padding: "20px 0" } }, "Caricamento\u2026"),
         archiveErr && React.createElement("div", { style: { color: "#e08a7a", fontSize: 13, padding: "12px 0" } }, archiveErr),
-        !archiveBusy && !archiveErr && archive && archive.length === 0 && React.createElement("div", { style: { color: "rgba(232,220,200,.45)", fontSize: 14, padding: "24px 0", textAlign: "center" } }, "Non hai ancora salvato nessun dossier. Genera un refit e premi \u00ABSalva in archivio\u00BB."),
+        !archiveBusy && !archiveErr && archive && archive.length === 0 && React.createElement("div", { style: { color: "rgba(232,220,200,.45)", fontSize: 14, padding: "24px 0", textAlign: "center" } }, "Non hai ancora salvato nessun render. Genera un refit e premi \u00ABSalva in archivio\u00BB."),
         !archiveBusy && archive && archive.length > 0 && React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 14 } },
-          archive.map(function (d) {
-            const rooms = (d.dossier_rooms || []).slice().sort(function (a, b) { return (a.position || 0) - (b.position || 0); });
-            const first = rooms[0] || {};
-            const open = archiveOpen === d.id;
-            const dt = d.created_at ? new Date(d.created_at).toLocaleDateString("it-IT") : "";
-            const count = rooms.length;
-            const meta = (count === 1 ? "1 ambiente" : count + " ambienti") + (dt ? " \u00B7 " + dt : "");
-            return React.createElement("div", { key: d.id, style: { border: "1px solid rgba(201,168,76,.16)", borderRadius: 4, overflow: "hidden", background: "rgba(0,0,0,.18)", gridColumn: open ? "1 / -1" : "auto" } },
+          archive.map(function (r) {
+            const open = !selMode && archiveOpen === r.id;
+            const sel = selected.indexOf(r.id) !== -1;
+            const dt = r.created_at ? new Date(r.created_at).toLocaleDateString("it-IT") : "";
+            const sub = (r.dossierTitle ? r.dossierTitle + " \u00B7 " : "") + dt;
+            return React.createElement("div", { key: r.id, style: { border: "1px solid " + (sel ? "#c9a84c" : "rgba(201,168,76,.16)"), boxShadow: sel ? "0 0 0 1px #c9a84c" : "none", borderRadius: 4, overflow: "hidden", background: "rgba(0,0,0,.18)", gridColumn: open ? "1 / -1" : "auto" } },
               !open
-                ? React.createElement("div", { onClick: () => setArchiveOpen(d.id), style: { cursor: "pointer" } },
-                    React.createElement("img", { src: first.after_signed, alt: d.title, style: { width: "100%", height: 132, objectFit: "cover", display: "block", background: "#0b1020" } }),
+                ? React.createElement("div", { onClick: () => { if (selMode) { setSelected(function (prev) { return prev.indexOf(r.id) !== -1 ? prev.filter(function (x) { return x !== r.id; }) : prev.concat([r.id]); }); } else { setArchiveOpen(r.id); } }, style: { cursor: "pointer", position: "relative" } },
+                    React.createElement("img", { src: r.after_signed, alt: r.label, style: { width: "100%", height: 132, objectFit: "cover", display: "block", background: "#0b1020" } }),
+                    selMode && React.createElement("div", { style: { position: "absolute", top: 8, right: 8, width: 27, height: 27, borderRadius: "50%", background: sel ? "#c9a84c" : "rgba(8,12,24,.62)", border: "1.5px solid " + (sel ? "#c9a84c" : "rgba(232,220,200,.55)"), color: "#060a14", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700 } }, sel ? "\u2713" : ""),
                     React.createElement("div", { style: { padding: "10px 12px" } },
-                      React.createElement("div", { style: { fontFamily: G, fontSize: 16, color: "#e8dcc8" } }, d.title || "Senza titolo"),
-                      React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.4)", marginTop: 3, letterSpacing: ".04em" } }, meta)
+                      React.createElement("div", { style: { fontFamily: G, fontSize: 16, color: "#e8dcc8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, r.label || "Ambiente"),
+                      React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.4)", marginTop: 3, letterSpacing: ".04em" } }, sub)
                     )
                   )
                 : React.createElement("div", null,
                     React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: "1px solid rgba(201,168,76,.12)", flexWrap: "wrap" } },
                       React.createElement("div", null,
-                        React.createElement("div", { style: { fontFamily: G, fontSize: 18, color: "#e8dcc8" } }, d.title || "Senza titolo"),
-                        React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.4)", marginTop: 2, letterSpacing: ".04em" } }, (d.client_recipient ? d.client_recipient + " \u00B7 " : "") + meta)
+                        React.createElement("div", { style: { fontFamily: G, fontSize: 18, color: "#e8dcc8" } }, r.label || "Ambiente"),
+                        React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.4)", marginTop: 2, letterSpacing: ".04em" } }, sub)
                       ),
-                      React.createElement("div", { style: { display: "flex", gap: 8 } },
-                        React.createElement("button", { className: "pbtn", onClick: (e) => { e.stopPropagation(); downloadDossierPDF(d); }, disabled: pdfDossierId === d.id }, pdfDossierId === d.id ? "PDF\u2026" : "\u2193 Scarica PDF"),
-                        React.createElement("button", { className: "sbtn", onClick: () => setArchiveOpen(null) }, "Chiudi")
-                      )
+                      React.createElement("button", { className: "sbtn", onClick: () => setArchiveOpen(null) }, "Chiudi")
                     ),
-                    React.createElement("div", { style: { padding: 12, display: "flex", flexDirection: "column", gap: 14 } },
-                      rooms.map(function (r, idx) {
-                        return React.createElement("div", { key: r.before_path || idx, style: { border: "1px solid rgba(201,168,76,.1)", borderRadius: 3, overflow: "hidden" } },
-                          React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 } },
-                            React.createElement("div", { style: { position: "relative" } },
-                              React.createElement("img", { src: r.before_signed, alt: "Prima", style: { width: "100%", height: 180, objectFit: "cover", display: "block", background: "#0b1020" } }),
-                              React.createElement("div", { style: { position: "absolute", top: 8, left: 8, background: "rgba(8,12,24,.72)", padding: "3px 10px", fontSize: 9, letterSpacing: ".18em", color: "rgba(232,220,200,.7)", textTransform: "uppercase", borderRadius: 2 } }, "Prima")
-                            ),
-                            React.createElement("div", { style: { position: "relative" } },
-                              React.createElement("img", { src: r.after_signed, alt: "Dopo", style: { width: "100%", height: 180, objectFit: "cover", display: "block", background: "#0b1020" } }),
-                              React.createElement("div", { style: { position: "absolute", top: 8, left: 8, background: "rgba(201,168,76,.86)", padding: "3px 10px", fontSize: 9, letterSpacing: ".16em", color: "#060a14", textTransform: "uppercase", borderRadius: 2, fontWeight: 600 } }, "Dopo")
-                            )
-                          ),
-                          React.createElement("div", { style: { padding: "8px 12px" } },
-                            React.createElement("div", { style: { fontFamily: G, fontSize: 15, color: "#e8dcc8" } }, (idx + 1) + ". " + (r.label || "Ambiente")),
-                            r.caption && React.createElement("div", { style: { fontSize: 12, color: "rgba(232,220,200,.5)", marginTop: 4, lineHeight: 1.5 } }, r.caption)
-                          )
-                        );
-                      })
+                    React.createElement("div", { style: { padding: 12 } },
+                      React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 } },
+                        React.createElement("div", { style: { position: "relative" } },
+                          React.createElement("img", { src: r.before_signed, alt: "Prima", style: { width: "100%", height: 200, objectFit: "cover", display: "block", background: "#0b1020" } }),
+                          React.createElement("div", { style: { position: "absolute", top: 8, left: 8, background: "rgba(8,12,24,.72)", padding: "3px 10px", fontSize: 9, letterSpacing: ".18em", color: "rgba(232,220,200,.7)", textTransform: "uppercase", borderRadius: 2 } }, "Prima")
+                        ),
+                        React.createElement("div", { style: { position: "relative" } },
+                          React.createElement("img", { src: r.after_signed, alt: "Dopo", style: { width: "100%", height: 200, objectFit: "cover", display: "block", background: "#0b1020" } }),
+                          React.createElement("div", { style: { position: "absolute", top: 8, left: 8, background: "rgba(201,168,76,.86)", padding: "3px 10px", fontSize: 9, letterSpacing: ".16em", color: "#060a14", textTransform: "uppercase", borderRadius: 2, fontWeight: 600 } }, "Dopo")
+                        )
+                      ),
+                      r.caption && React.createElement("div", { style: { fontSize: 12.5, color: "rgba(232,220,200,.55)", marginTop: 10, lineHeight: 1.6 } }, r.caption)
                     )
                   )
             );
           })
         ),
-        React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: 24 } },
-          React.createElement("button", { className: "pbtn", onClick: () => setShowArchive(false) }, "Chiudi")
-        )
-      )
-    ),
-    showSaveDlg && React.createElement("div", { className: "modal-bg", onClick: (e) => { if (e.target.classList.contains("modal-bg")) setShowSaveDlg(false); } },
-      React.createElement("div", { className: "modal" },
-        React.createElement("div", { style: { fontFamily: G, fontSize: 22, color: "#e8dcc8", marginBottom: 6, fontWeight: 300, letterSpacing: ".05em" } }, "Salva in archivio"),
-        React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.4)", marginBottom: 22, lineHeight: 1.6 } }, "Crea un nuovo dossier o aggiungi questo ambiente a uno esistente."),
-        React.createElement("div", { className: "sn", style: { marginBottom: 8 } }, "Nome ambiente"),
-        React.createElement("input", { className: "inp", type: "text", placeholder: "es. Salone, Cabina armatoriale\u2026", value: saveRoomLabel, onChange: (e) => setSaveRoomLabel(e.target.value) }),
-        React.createElement("div", { style: { display: "flex", gap: 8, margin: "18px 0 14px" } },
-          React.createElement("button", { onClick: () => setSaveMode("new"), style: tabStyle(saveMode === "new") }, "Nuovo dossier"),
-          React.createElement("button", { onClick: () => myDossiers.length && setSaveMode("existing"), disabled: !myDossiers.length, style: tabStyle(saveMode === "existing") }, myDossiers.length ? "Dossier esistente" : "Nessun dossier")
+        selMode && archive && archive.length > 0 && React.createElement("div", { style: { position: "sticky", bottom: -1, marginTop: 18, paddingTop: 14, background: "linear-gradient(to top, #0b1020 72%, rgba(11,16,32,0))", display: "flex", flexDirection: "column", gap: 10 } },
+          React.createElement("div", { style: { fontSize: 12, color: "#c9a84c", letterSpacing: ".06em" } }, selected.length === 0 ? "Nessun render selezionato" : (selected.length === 1 ? "1 render selezionato" : selected.length + " render selezionati")),
+          React.createElement("input", { className: "inp", type: "text", placeholder: "Titolo del dossier (es. M/Y SISA)", value: pdfTitle, onChange: (e) => setPdfTitle(e.target.value) }),
+          React.createElement("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" } },
+            React.createElement("button", { className: "sbtn", onClick: () => setSelected([]), disabled: !selected.length }, "Deseleziona"),
+            React.createElement("button", { className: "pbtn", onClick: () => { const map = {}; (archive || []).forEach(function (x) { map[x.id] = x; }); const rs = selected.map(function (id) { return map[id]; }).filter(Boolean); if (rs.length) composePDF(rs, pdfTitle); }, disabled: composing || selected.length === 0 }, composing ? "Creazione PDF\u2026" : "\u2193 Crea PDF (" + selected.length + ")")
+          )
         ),
-        saveMode === "new"
-          ? React.createElement("div", null,
-              React.createElement("div", { className: "sn", style: { marginBottom: 8 } }, "Titolo dossier"),
-              React.createElement("input", { className: "inp", type: "text", placeholder: "es. M/Y SISA", value: saveTitle, onChange: (e) => setSaveTitle(e.target.value) }),
-              React.createElement("div", { className: "sn", style: { margin: "14px 0 8px" } }, "Destinatario (opzionale)"),
-              React.createElement("input", { className: "inp", type: "text", placeholder: "es. Master Brokerage \u2014 Luca Gianardi", value: saveRecipient, onChange: (e) => setSaveRecipient(e.target.value) })
-            )
-          : React.createElement("div", null,
-              React.createElement("div", { className: "sn", style: { marginBottom: 8 } }, "Scegli il dossier"),
-              React.createElement("select", { className: "inp", value: saveTargetId, onChange: (e) => setSaveTargetId(e.target.value) },
-                React.createElement("option", { value: "" }, "\u2014 seleziona \u2014"),
-                myDossiers.map((d) => React.createElement("option", { key: d.id, value: d.id }, d.title || "Senza titolo"))
-              )
-            ),
-        err && React.createElement("div", { style: { color: "#e08a7a", fontSize: 12.5, marginTop: 14, lineHeight: 1.5 } }, err),
-        React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 26, justifyContent: "flex-end", flexWrap: "wrap" } },
-          React.createElement("button", { className: "sbtn", onClick: () => setShowSaveDlg(false) }, "Annulla"),
-          React.createElement("button", { className: "pbtn", onClick: confirmSave, disabled: saveStatus === "saving" || (saveMode === "existing" && !saveTargetId) }, saveStatus === "saving" ? "Salvataggio\u2026" : "Salva")
+        !selMode && React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: 24 } },
+          React.createElement("button", { className: "pbtn", onClick: () => setShowArchive(false) }, "Chiudi")
         )
       )
     ),
@@ -1476,7 +1414,7 @@ function BAMYachtApp() {
         ),
         React.createElement("div", { style: { display: "flex", justifyContent: "center", gap: 12, marginTop: 24, flexWrap: "wrap" } },
           React.createElement("button", { className: "pbtn", onClick: downloadPDF, disabled: pdfBusy || !resultB64 }, pdfBusy ? "Creazione PDF…" : !resultB64 ? "Preparazione PDF…" : "↓ Scarica PDF"),
-          React.createElement("button", { className: "pbtn", onClick: openSaveDialog, disabled: saveStatus === "saving" || saveStatus === "saved" || !result }, saveStatus === "saving" ? "Salvataggio…" : saveStatus === "saved" ? "Salvato ✓" : "★ Salva in archivio"),
+          React.createElement("button", { className: "pbtn", onClick: saveToArchive, disabled: saveStatus === "saving" || saveStatus === "saved" || !result }, saveStatus === "saving" ? "Salvataggio…" : saveStatus === "saved" ? "Salvato ✓" : "★ Salva in archivio"),
           React.createElement("a", { href: result, target: "_blank", rel: "noopener noreferrer", className: "olink" }, "Apri render ↗"),
           React.createElement("button", { className: "sbtn", onClick: () => { setResult(null); setResultB64(null); setErr(null); setSaveStatus(null); } }, "Nuovo Render")
         )
