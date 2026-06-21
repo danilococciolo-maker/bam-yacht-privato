@@ -247,6 +247,30 @@ const EDIT_FALLBACK_ENDPOINT = "/v1/models/google/nano-banana/predictions";
 const JUDGE_ENDPOINT = "/v1/models/google/gemini-3-flash/predictions";
 const N_SAMPLES = 3;
 
+// ---- Persistenza del lavoro in corso (per riprendere dopo un'uscita / ricarica) ----
+// Salvo l'essenziale in localStorage: foto di partenza, richiesta e ID della fase finale.
+// Tutto avvolto in try/catch: se fallisce non blocca mai la generazione.
+const JOB_KEY = "bam_job_v1";
+function saveJob(patch) {
+  try {
+    let cur = {};
+    try { cur = JSON.parse(localStorage.getItem(JOB_KEY) || "{}") || {}; } catch (_) { cur = {}; }
+    const next = Object.assign(cur, patch);
+    try {
+      localStorage.setItem(JOB_KEY, JSON.stringify(next));
+    } catch (_) {
+      // memoria piena: riprovo senza l'immagine pesante
+      try { const lite = Object.assign({}, next); delete lite.beforeImg; localStorage.setItem(JOB_KEY, JSON.stringify(lite)); } catch (__) {}
+    }
+  } catch (_) {}
+}
+function readJob() {
+  try { return JSON.parse(localStorage.getItem(JOB_KEY) || "null"); } catch (_) { return null; }
+}
+function clearJob() {
+  try { localStorage.removeItem(JOB_KEY); } catch (_) {}
+}
+
 // Lancia piu lavori in parallelo ma SFALSATI di pochi ms l'uno dall'altro, cosi
 // non arrivano tutti nello stesso istante e non scatenano i 429 del token Replicate.
 function mapStaggered(items, gapMs, fn) {
@@ -507,6 +531,7 @@ function BAMYachtApp() {
   const [selected, setSelected] = useState([]);          // id render selezionati (in ordine)
   const [pdfTitle, setPdfTitle] = useState("");          // titolo del dossier da comporre
   const [composing, setComposing] = useState(false);     // PDF in creazione
+  const [resumeJob, setResumeJob] = useState(null);       // lavoro interrotto da riprendere a mano
   const isAdmin = ADMIN_EMAILS.indexOf((userEmail || "").trim().toLowerCase()) !== -1;
   const updateYacht = (k, v) => setYacht(prev => Object.assign({}, prev, { [k]: v }));
   const fileRef = useRef();
@@ -632,11 +657,62 @@ function BAMYachtApp() {
     });
   };
 
+  // Riprende la rifinitura HD (upscale) da un lavoro salvato: ripesca la prediction
+  // gia avviata su Replicate e, quando e pronta, scambia in silenzio l'immagine in HD.
+  const finishUpscaleFrom = async (pollPath, beforeImg, tk) => {
+    try {
+      let upscale = null, upAttempts = 0;
+      while (upAttempts < 160) {
+        const r = await fetch(pollPath, { headers: { "Authorization": "Token " + tk } });
+        if (!r.ok) return false;
+        upscale = await r.json();
+        if (upscale.status !== "starting" && upscale.status !== "processing") break;
+        await new Promise(res => setTimeout(res, 2000));
+        upAttempts++;
+      }
+      if (upscale && upscale.status === "succeeded") {
+        const rawUrl = Array.isArray(upscale.output) ? upscale.output[0] : upscale.output;
+        const finalUrl = await matchAspect(rawUrl, beforeImg);
+        setResult(finalUrl);
+        urlToDataUri(finalUrl).then(setResultB64).catch(() => {});
+        saveJob({ status: "done", resultUrl: finalUrl });
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  };
+
+  // All'apertura dell'app: se c'era un lavoro in corso quando hai lasciato la pagina,
+  // lo riprendo invece di azzerarlo.
+  useEffect(() => {
+    const job = readJob();
+    if (!job || !job.ts) return;
+    if (Date.now() - job.ts > 6 * 3600 * 1000) { clearJob(); return; } // piu vecchio di 6 ore: scarto
+    if (job.beforeImg) setImg(job.beforeImg);
+    if (job.imgAspect) setImgAspect(job.imgAspect);
+    if (job.refitText) setRefitText(job.refitText);
+    if (job.room) setRoom(job.room);
+    if (job.styleLabel) setStyleLabel(job.styleLabel);
+    if ((job.status === "done" || job.status === "preview") && job.resultUrl) {
+      setResult(job.resultUrl);
+      urlToDataUri(job.resultUrl).then(setResultB64).catch(() => {});
+      if (job.status === "preview" && job.upscalePoll && job.beforeImg) {
+        let tk = ""; try { tk = localStorage.getItem("bam_replicate_token") || ""; } catch (_) {}
+        if (tk) { setUpscaling(true); finishUpscaleFrom(job.upscalePoll, job.beforeImg, tk).finally(() => setUpscaling(false)); }
+      }
+    } else if (job.status === "generating" && job.beforeImg) {
+      setResumeJob(job); // generazione interrotta: offro ripresa a mano (niente doppio addebito automatico)
+    }
+  }, []);
+
   const generate = async () => {
     if (!img || busy) return;
     if (!token) { setShowSettings(true); return; }
     if (!refitText.trim()) { setErr("Descrivi il refit che desideri."); return; }
+    setResumeJob(null);
     setBusy(true); setResult(null); setResultB64(null); setErr(null); setClarify(null); setStep(0); setLockStatus(null); setRemoveStatus(null); setRemoveList([]); setUpscaling(false); setSaveStatus(null);
+    clearJob();
+    saveJob({ id: Date.now(), ts: Date.now(), status: "generating", refitText: refitText.trim(), room: room || "", stylePreset: stylePreset || "", imgAspect: imgAspect, beforeImg: img });
     try {
       // 1) Motore di composizione: traduce la richiesta del broker in stile + materiali
       let composed = null;
@@ -818,6 +894,7 @@ function BAMYachtApp() {
       const previewUrl = await matchAspect(baseOutputUrl, img);
       setResult(previewUrl);
       urlToDataUri(previewUrl).then(setResultB64).catch(() => {});
+      saveJob({ status: "preview", resultUrl: previewUrl, styleLabel: label });
       setBusy(false);
       setUpscaling(true);
       (async () => {
@@ -831,6 +908,7 @@ function BAMYachtApp() {
           });
           if (!upRes.ok) return;
           let upscale = await upRes.json();
+          try { saveJob({ upscalePoll: new URL(upscale.urls.get).pathname }); } catch (_) {}
           let upAttempts = 0;
           while ((upscale.status === "starting" || upscale.status === "processing") && upAttempts < 150) {
             await new Promise(r => setTimeout(r, 2000));
@@ -845,6 +923,7 @@ function BAMYachtApp() {
             const finalUrl = await matchAspect(rawUrl, img);
             setResult(finalUrl);
             urlToDataUri(finalUrl).then(setResultB64).catch(() => {});
+            saveJob({ status: "done", resultUrl: finalUrl });
           }
         } catch (_) {
           // Se l'ingrandimento fallisce, resta l'anteprima: nessun problema.
@@ -855,6 +934,7 @@ function BAMYachtApp() {
       return;
     } catch (e) {
       setErr(e.message || "Errore imprevisto");
+      clearJob();
     } finally {
       setBusy(false);
     }
@@ -1279,6 +1359,16 @@ function BAMYachtApp() {
       )
     ),
     React.createElement("main", null,
+      resumeJob && !busy && !result && React.createElement("div", { style: { margin: "0 0 28px", padding: "16px 18px", background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.3)", borderRadius: 4, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", justifyContent: "space-between" } },
+      React.createElement("div", { style: { flex: "1 1 240px" } },
+        React.createElement("div", { style: { fontFamily: G, fontSize: 17, color: "#e8dcc8", marginBottom: 3 } }, "Render interrotto"),
+        React.createElement("div", { style: { fontSize: 12.5, color: "rgba(232,220,200,.55)", lineHeight: 1.5 } }, "La generazione si \u00E8 fermata quando hai lasciato la pagina. Ho ripristinato la foto e la richiesta: premi Riprendi per rifarla.")
+      ),
+      React.createElement("div", { style: { display: "flex", gap: 10 } },
+        React.createElement("button", { className: "sbtn", onClick: () => { setResumeJob(null); clearJob(); } }, "Ignora"),
+        React.createElement("button", { className: "pbtn", onClick: () => { setResumeJob(null); generate(); } }, "Riprendi")
+      )
+    ),
       React.createElement("div", { style: { textAlign: "center", marginBottom: 56 } },
         React.createElement("div", { style: { fontFamily: G, fontSize: 11, letterSpacing: ".38em", color: "rgba(201,168,76,.4)", textTransform: "uppercase", marginBottom: 18 } }, "BAM Vision · AI Refit Studio"),
         React.createElement("h1", { style: { fontFamily: G, fontSize: "clamp(28px,6vw,52px)", fontWeight: 300, lineHeight: 1.15, color: "#e8dcc8", marginBottom: 18, letterSpacing: ".03em" } },
@@ -1301,7 +1391,7 @@ function BAMYachtApp() {
           React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.18)" } }, "JPG · PNG · WEBP — max 10 MB")
         ) : React.createElement("div", { style: { position: "relative", borderRadius: 3, overflow: "hidden" } },
           React.createElement("img", { src: img, alt: "Prima", style: { width: "100%", maxHeight: 440, objectFit: "cover", display: "block" } }),
-          React.createElement("button", { onClick: () => { setImg(null); setResult(null); setResultB64(null); }, style: { position: "absolute", top: 10, right: 10, width: 30, height: 30, background: "rgba(8,12,24,.85)", border: "1px solid rgba(201,168,76,.28)", color: "#c9a84c", borderRadius: "50%", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" } }, "\u00D7"),
+          React.createElement("button", { onClick: () => { setImg(null); setResult(null); setResultB64(null); setResumeJob(null); clearJob(); }, style: { position: "absolute", top: 10, right: 10, width: 30, height: 30, background: "rgba(8,12,24,.85)", border: "1px solid rgba(201,168,76,.28)", color: "#c9a84c", borderRadius: "50%", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" } }, "\u00D7"),
           React.createElement("div", { style: { position: "absolute", bottom: 12, left: 12, background: "rgba(8,12,24,.72)", padding: "4px 12px", fontSize: 10, letterSpacing: ".2em", color: "rgba(232,220,200,.55)", textTransform: "uppercase", borderRadius: 2 } }, "Prima")
         ),
         React.createElement("input", { ref: fileRef, type: "file", accept: "image/*", style: { display: "none" }, onChange: (e) => loadFile(e.target.files[0]) })
@@ -1416,7 +1506,7 @@ function BAMYachtApp() {
           React.createElement("button", { className: "pbtn", onClick: downloadPDF, disabled: pdfBusy || !resultB64 }, pdfBusy ? "Creazione PDF…" : !resultB64 ? "Preparazione PDF…" : "↓ Scarica PDF"),
           React.createElement("button", { className: "pbtn", onClick: saveToArchive, disabled: saveStatus === "saving" || saveStatus === "saved" || !result }, saveStatus === "saving" ? "Salvataggio…" : saveStatus === "saved" ? "Salvato ✓" : "★ Salva in archivio"),
           React.createElement("a", { href: result, target: "_blank", rel: "noopener noreferrer", className: "olink" }, "Apri render ↗"),
-          React.createElement("button", { className: "sbtn", onClick: () => { setResult(null); setResultB64(null); setErr(null); setSaveStatus(null); } }, "Nuovo Render")
+          React.createElement("button", { className: "sbtn", onClick: () => { setResult(null); setResultB64(null); setErr(null); setSaveStatus(null); clearJob(); } }, "Nuovo Render")
         )
       )
     ),
