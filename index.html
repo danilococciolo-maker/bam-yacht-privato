@@ -1238,27 +1238,24 @@ function BAMYachtApp() {
       const uid = sess && sess.data && sess.data.session && sess.data.session.user && sess.data.session.user.id;
       if (!uid) { setShareErr("Sessione scaduta: rientra e riprova."); setShareBusy(false); return; }
       const shareId = uuidv4();
-      const PUB = "public-shares";
-      const payload = [];
-      for (let i = 0; i < rooms.length; i++) {
-        const r = rooms[i];
-        const bBlob = r.before_signed ? await blobFromAny(r.before_signed) : null;
-        const aBlob = r.after_signed ? await blobFromAny(r.after_signed) : null;
-        let before_url = null, after_url = null;
-        if (bBlob) {
-          const p = uid + "/" + shareId + "/" + i + "_b.jpg";
-          const up = await supabaseClient.storage.from(PUB).upload(p, bBlob, { contentType: "image/jpeg", upsert: true });
-          if (up.error) throw up.error;
-          before_url = supabaseClient.storage.from(PUB).getPublicUrl(p).data.publicUrl;
-        }
-        if (aBlob) {
-          const p = uid + "/" + shareId + "/" + i + "_a.jpg";
-          const up = await supabaseClient.storage.from(PUB).upload(p, aBlob, { contentType: "image/jpeg", upsert: true });
-          if (up.error) throw up.error;
-          after_url = supabaseClient.storage.from(PUB).getPublicUrl(p).data.publicUrl;
-        }
-        payload.push({ label: r.label || ("Ambiente " + (i + 1)), caption: r.caption || "", before_url: before_url, after_url: after_url });
+      const YEAR = 60 * 60 * 24 * 365; // link valido un anno
+      // Genero link firmati a lunga scadenza sulle immagini esistenti (il cliente le apre senza login).
+      const paths = [];
+      rooms.forEach(function (r) { if (r.before_path) paths.push(r.before_path); if (r.after_path) paths.push(r.after_path); });
+      const signed = {};
+      if (paths.length) {
+        const sg = await supabaseClient.storage.from(BUCKET).createSignedUrls(paths, YEAR);
+        if (sg.error) throw sg.error;
+        (sg.data || []).forEach(function (s) { if (s && s.path && s.signedUrl) signed[s.path] = s.signedUrl; });
       }
+      const payload = rooms.map(function (r, i) {
+        return {
+          label: r.label || ("Ambiente " + (i + 1)),
+          caption: r.caption || "",
+          before_url: r.before_path ? (signed[r.before_path] || r.before_signed || null) : null,
+          after_url: r.after_path ? (signed[r.after_path] || r.after_signed || null) : null
+        };
+      });
       const ins = await supabaseClient.from("shares").insert({ id: shareId, broker_id: uid, title: (title && title.trim()) || "Proposta di refit", rooms: payload });
       if (ins.error) throw ins.error;
       setShareLink(location.origin + "/?s=" + shareId);
@@ -1293,6 +1290,7 @@ function BAMYachtApp() {
         (d.dossier_rooms || []).forEach(function (r) {
           flat.push({
             id: r.id, label: r.label, caption: r.caption,
+            before_path: r.before_path, after_path: r.after_path,
             before_signed: signed[r.before_path], after_signed: signed[r.after_path],
             dossierTitle: d.title, created_at: d.created_at
           });
