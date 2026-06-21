@@ -1410,11 +1410,11 @@ function BAMYachtApp() {
         shareBusy && React.createElement("div", { style: { color: "rgba(232,220,200,.6)", fontSize: 14, padding: "16px 0" } }, "Preparo il link\u2026"),
         shareErr && React.createElement("div", { style: { color: "#e08a7a", fontSize: 13, padding: "12px 0", lineHeight: 1.5 } }, shareErr),
         shareLink && React.createElement("div", null,
-          React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.5)", marginBottom: 16, lineHeight: 1.6 } }, "Chiunque abbia questo link vede il prima/dopo, senza bisogno di registrarsi. Copialo e invialo al tuo cliente."),
+          React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.5)", marginBottom: 16, lineHeight: 1.6 } }, "Chiunque abbia questo link vede il prima/dopo, senza bisogno di registrarsi. Premi Condividi per inviarlo con WhatsApp, Mail, Telegram o qualunque app."),
           React.createElement("input", { className: "inp", type: "text", readOnly: true, value: shareLink, onFocus: (e) => e.target.select(), style: { marginBottom: 14, fontSize: 13 } }),
           React.createElement("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" } },
-            React.createElement("button", { className: "sbtn", onClick: () => { window.open(shareLink, "_blank"); } }, "Apri"),
-            React.createElement("button", { className: "pbtn", onClick: () => { try { navigator.clipboard.writeText(shareLink); setShareCopied(true); setTimeout(() => setShareCopied(false), 2000); } catch (_) {} } }, shareCopied ? "Copiato \u2713" : "Copia link")
+            React.createElement("button", { className: "sbtn", onClick: () => { try { navigator.clipboard.writeText(shareLink); setShareCopied(true); setTimeout(() => setShareCopied(false), 2000); } catch (_) {} } }, shareCopied ? "Copiato \u2713" : "Copia"),
+            React.createElement("button", { className: "pbtn", onClick: async () => { try { if (navigator.share) { await navigator.share({ title: "BAM Vision \u2014 Proposta di refit", text: "Ecco la proposta di refit:", url: shareLink }); } else { navigator.clipboard.writeText(shareLink); setShareCopied(true); setTimeout(() => setShareCopied(false), 2000); } } catch (_) {} } }, "\u21AA Condividi")
           )
         ),
         React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: 20 } },
