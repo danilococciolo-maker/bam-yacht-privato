@@ -537,6 +537,11 @@ function BAMYachtApp() {
   const [shareLink, setShareLink] = useState(null);
   const [shareErr, setShareErr] = useState(null);
   const [shareCopied, setShareCopied] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [adminData, setAdminData] = useState(null);
+  const [adminBusy, setAdminBusy] = useState(false);
+  const [adminErr, setAdminErr] = useState(null);
+  const [costPerRender, setCostPerRender] = useState("0.10");
   const isAdmin = ADMIN_EMAILS.indexOf((userEmail || "").trim().toLowerCase()) !== -1;
   const updateYacht = (k, v) => setYacht(prev => Object.assign({}, prev, { [k]: v }));
   const fileRef = useRef();
@@ -549,7 +554,7 @@ function BAMYachtApp() {
     } catch (_) {}
   }, []);
 
-  // Recupero l'email dell'utente loggato per capire se mostrare i semafori (solo admin).
+  // Recupero l'email dell'utente loggato (per mostrare i semafori e la dashboard admin solo a Danilo).
   useEffect(() => {
     let active = true;
     (async () => {
@@ -1265,6 +1270,19 @@ function BAMYachtApp() {
       setShareBusy(false);
     }
   }
+  async function openAdmin() {
+    setShowAdmin(true);
+    setAdminBusy(true); setAdminErr(null);
+    try {
+      const { data, error } = await supabaseClient.rpc("admin_stats");
+      if (error) throw error;
+      setAdminData(data);
+    } catch (e) {
+      setAdminErr(e && e.message ? e.message : String(e));
+    } finally {
+      setAdminBusy(false);
+    }
+  }
   async function openArchive() {
     setShowArchive(true);
     if (archive === null) loadArchive();
@@ -1309,7 +1327,10 @@ function BAMYachtApp() {
   return React.createElement("div", null,
     React.createElement("header", null,
       React.createElement("button", { className: "gear" + (token ? " ok" : ""), onClick: () => setShowSettings(true), title: "Impostazioni Replicate" }, "\u2699"),
-      React.createElement("button", { onClick: openArchive, title: "I miei dossier", style: { position: "absolute", left: 62, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "1px solid rgba(201,168,76,.18)", color: "rgba(201,168,76,.62)", height: 34, padding: "0 16px", borderRadius: 18, cursor: "pointer", fontFamily: G, fontSize: 12, letterSpacing: ".16em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 7 } }, "\u25A6 Archivio"),
+      React.createElement("div", { style: { position: "absolute", left: 62, top: "50%", transform: "translateY(-50%)", display: "flex", alignItems: "center", gap: 8 } },
+        React.createElement("button", { onClick: openArchive, title: "I miei dossier", style: { background: "transparent", border: "1px solid rgba(201,168,76,.18)", color: "rgba(201,168,76,.62)", height: 34, padding: "0 16px", borderRadius: 18, cursor: "pointer", fontFamily: G, fontSize: 12, letterSpacing: ".16em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 7 } }, "\u25A6 Archivio"),
+        isAdmin && React.createElement("button", { onClick: openAdmin, title: "Pannello di controllo", style: { background: "rgba(201,168,76,.1)", border: "1px solid rgba(201,168,76,.32)", color: "#c9a84c", height: 34, padding: "0 16px", borderRadius: 18, cursor: "pointer", fontFamily: G, fontSize: 12, letterSpacing: ".16em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 7 } }, "\u25C8 Admin")
+      ),
       React.createElement(BAMLogo, null),
       React.createElement("span", { className: "badge" }, "BAM VISION · KONTEXT")
     ),
@@ -1419,6 +1440,90 @@ function BAMYachtApp() {
         ),
         React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: 20 } },
           React.createElement("button", { className: "sbtn", onClick: () => { setShareLink(null); setShareErr(null); } }, "Chiudi")
+        )
+      )
+    ),
+    showAdmin && React.createElement("div", { className: "modal-bg", onClick: (e) => { if (e.target.classList.contains("modal-bg")) setShowAdmin(false); } },
+      React.createElement("div", { className: "modal", style: { maxWidth: 880, maxHeight: "86vh", overflowY: "auto" } },
+        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6, flexWrap: "wrap", gap: 10 } },
+          React.createElement("div", { style: { fontFamily: G, fontSize: 24, color: "#e8dcc8", fontWeight: 300, letterSpacing: ".04em" } }, "\u25C8 Pannello di controllo"),
+          React.createElement("button", { className: "sbtn", onClick: openAdmin, disabled: adminBusy }, adminBusy ? "Aggiorno\u2026" : "Aggiorna")
+        ),
+        React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.4)", marginBottom: 22, lineHeight: 1.6 } }, "Vista riservata. Broker, attivit\u00E0 e costi stimati di BAM Vision."),
+        adminBusy && !adminData && React.createElement("div", { style: { color: "rgba(232,220,200,.5)", fontSize: 14, padding: "20px 0" } }, "Caricamento\u2026"),
+        adminErr && React.createElement("div", { style: { color: "#e08a7a", fontSize: 13, padding: "12px 0" } }, adminErr),
+        adminData && (function () {
+          const t = adminData.totals || {};
+          const brokers = adminData.brokers || [];
+          const recent = adminData.recent || [];
+          const rate = parseFloat((costPerRender || "0").replace(",", ".")) || 0;
+          const stima = (t.renders || 0) * rate;
+          const card = function (label, value) {
+            return React.createElement("div", { style: { flex: "1 1 120px", background: "rgba(0,0,0,.2)", border: "1px solid rgba(201,168,76,.14)", borderRadius: 4, padding: "16px 18px" } },
+              React.createElement("div", { style: { fontFamily: G, fontSize: 30, color: "#e8dcc8", lineHeight: 1 } }, value),
+              React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.45)", marginTop: 6, letterSpacing: ".08em", textTransform: "uppercase" } }, label)
+            );
+          };
+          const fdate = function (s) { return s ? new Date(s).toLocaleDateString("it-IT") : "\u2014"; };
+          return React.createElement("div", null,
+            React.createElement("div", { style: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 22 } },
+              card("Broker", t.brokers || 0), card("Dossier", t.dossiers || 0), card("Render", t.renders || 0), card("Link", t.shares || 0)
+            ),
+            React.createElement("div", { style: { background: "rgba(201,168,76,.06)", border: "1px solid rgba(201,168,76,.2)", borderRadius: 4, padding: "16px 18px", marginBottom: 26, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" } },
+              React.createElement("div", null,
+                React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.45)", letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 4 } }, "Costo GPU stimato"),
+                React.createElement("div", { style: { fontFamily: G, fontSize: 26, color: "#c9a84c" } }, "\u20AC " + stima.toFixed(2))
+              ),
+              React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
+                React.createElement("span", { style: { fontSize: 12, color: "rgba(232,220,200,.5)" } }, "\u20AC / render"),
+                React.createElement("input", { className: "inp", type: "text", inputMode: "decimal", value: costPerRender, onChange: (e) => setCostPerRender(e.target.value), style: { width: 90, fontSize: 13 } })
+              ),
+              React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.35)", flexBasis: "100%", lineHeight: 1.5 } }, "Stima: numero di render \u00D7 costo medio per render. Regola il valore con quello reale di Replicate.")
+            ),
+            React.createElement("div", { style: { fontFamily: G, fontSize: 18, color: "#e8dcc8", margin: "0 0 12px", letterSpacing: ".03em" } }, "Broker"),
+            React.createElement("div", { style: { overflowX: "auto", marginBottom: 28 } },
+              React.createElement("table", { style: { width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 560 } },
+                React.createElement("thead", null,
+                  React.createElement("tr", { style: { textAlign: "left", color: "rgba(232,220,200,.4)", fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase" } },
+                    ["Nome", "Email", "Ruolo", "Dossier", "Render", "Link", "Ultimo", "Iscritto"].map(function (h, i) { return React.createElement("th", { key: i, style: { padding: "8px 10px", borderBottom: "1px solid rgba(201,168,76,.16)", whiteSpace: "nowrap" } }, h); })
+                  )
+                ),
+                React.createElement("tbody", null,
+                  brokers.map(function (b, i) {
+                    return React.createElement("tr", { key: b.id || i, style: { color: "rgba(232,220,200,.8)" } },
+                      React.createElement("td", { style: { padding: "9px 10px", borderBottom: "1px solid rgba(201,168,76,.08)" } }, React.createElement("div", null, b.full_name || "\u2014"), b.company_name && React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.4)" } }, b.company_name)),
+                      React.createElement("td", { style: { padding: "9px 10px", borderBottom: "1px solid rgba(201,168,76,.08)", color: "rgba(232,220,200,.55)" } }, b.email),
+                      React.createElement("td", { style: { padding: "9px 10px", borderBottom: "1px solid rgba(201,168,76,.08)" } }, React.createElement("span", { style: { fontSize: 11, padding: "2px 8px", borderRadius: 10, background: b.role === "admin" ? "rgba(201,168,76,.18)" : "rgba(232,220,200,.08)", color: b.role === "admin" ? "#c9a84c" : "rgba(232,220,200,.6)" } }, b.role || "broker")),
+                      React.createElement("td", { style: { padding: "9px 10px", borderBottom: "1px solid rgba(201,168,76,.08)" } }, b.dossiers || 0),
+                      React.createElement("td", { style: { padding: "9px 10px", borderBottom: "1px solid rgba(201,168,76,.08)" } }, b.renders || 0),
+                      React.createElement("td", { style: { padding: "9px 10px", borderBottom: "1px solid rgba(201,168,76,.08)" } }, b.shares || 0),
+                      React.createElement("td", { style: { padding: "9px 10px", borderBottom: "1px solid rgba(201,168,76,.08)", color: "rgba(232,220,200,.5)", whiteSpace: "nowrap" } }, fdate(b.last_render)),
+                      React.createElement("td", { style: { padding: "9px 10px", borderBottom: "1px solid rgba(201,168,76,.08)", color: "rgba(232,220,200,.5)", whiteSpace: "nowrap" } }, fdate(b.created_at))
+                    );
+                  })
+                )
+              )
+            ),
+            React.createElement("div", { style: { fontFamily: G, fontSize: 18, color: "#e8dcc8", margin: "0 0 12px", letterSpacing: ".03em" } }, "Ultimi render"),
+            React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+              recent.length === 0 && React.createElement("div", { style: { color: "rgba(232,220,200,.4)", fontSize: 13 } }, "Nessun render ancora."),
+              recent.map(function (r, i) {
+                return React.createElement("div", { key: i, style: { display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 12px", background: "rgba(0,0,0,.16)", border: "1px solid rgba(201,168,76,.1)", borderRadius: 3, flexWrap: "wrap" } },
+                  React.createElement("div", { style: { minWidth: 0 } },
+                    React.createElement("div", { style: { fontFamily: G, fontSize: 15, color: "#e8dcc8" } }, r.label || "Ambiente"),
+                    r.caption && React.createElement("div", { style: { fontSize: 11.5, color: "rgba(232,220,200,.42)", marginTop: 2, lineHeight: 1.4, maxWidth: 560, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, r.caption)
+                  ),
+                  React.createElement("div", { style: { textAlign: "right", whiteSpace: "nowrap" } },
+                    React.createElement("div", { style: { fontSize: 12, color: "#c9a84c" } }, r.broker || "\u2014"),
+                    React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.4)", marginTop: 2 } }, fdate(r.created_at))
+                  )
+                );
+              })
+            )
+          );
+        })(),
+        React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: 26 } },
+          React.createElement("button", { className: "pbtn", onClick: () => setShowAdmin(false) }, "Chiudi")
         )
       )
     ),
