@@ -497,6 +497,12 @@ function BAMYachtApp() {
   const [yacht, setYacht] = useState({ cantiere: "", modello: "", anno: "", oreMotore: "", manutenzione: "" });
   const [tick, setTick] = useState(0);
   const [userEmail, setUserEmail] = useState("");
+  const [saveStatus, setSaveStatus] = useState(null);   // null | "saving" | "saved" | "error"
+  const [showArchive, setShowArchive] = useState(false);
+  const [archive, setArchive] = useState(null);          // null = mai caricato, [] = vuoto
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveErr, setArchiveErr] = useState(null);
+  const [archiveOpen, setArchiveOpen] = useState(null);  // id dossier espanso nel confronto
   const isAdmin = ADMIN_EMAILS.indexOf((userEmail || "").trim().toLowerCase()) !== -1;
   const updateYacht = (k, v) => setYacht(prev => Object.assign({}, prev, { [k]: v }));
   const fileRef = useRef();
@@ -626,7 +632,7 @@ function BAMYachtApp() {
     if (!img || busy) return;
     if (!token) { setShowSettings(true); return; }
     if (!refitText.trim()) { setErr("Descrivi il refit che desideri."); return; }
-    setBusy(true); setResult(null); setResultB64(null); setErr(null); setClarify(null); setStep(0); setLockStatus(null); setRemoveStatus(null); setRemoveList([]); setUpscaling(false);
+    setBusy(true); setResult(null); setResultB64(null); setErr(null); setClarify(null); setStep(0); setLockStatus(null); setRemoveStatus(null); setRemoveList([]); setUpscaling(false); setSaveStatus(null);
     try {
       // 1) Motore di composizione: traduce la richiesta del broker in stile + materiali
       let composed = null;
@@ -728,6 +734,16 @@ function BAMYachtApp() {
           .catch(() => null);
       }
 
+      // Schema CHIARO richiesto su parete/intero ambiente? Allora conviene un passaggio
+      // dedicato che converte PRIMA tutto il legno in crema (un compito solo = obbedienza
+      // alta), e POI applica lo stile sopra. Serve per le cabine "tutte legno", dove il
+      // modello in un colpo solo schiarisce gli arredi ma lascia le pareti in legno.
+      const _txt = (styleClause + " " + refitText).toLowerCase();
+      const _wantsLight = /(crema|bianc|chiar|avorio|panna|scandinav|\bwhite\b|\bcream\b|ivory|\bpale\b|\blight\b)/.test(_txt);
+      const _wholeRoom = /(tutt|paret|wall|intero|intera|ambiente|stanza|cabina|salone|room|everything|whole|legno|wood)/.test(_txt);
+      const _keepsWood = /(manten|lascia|tieni|keep)[a-z\s]{0,20}(legno|wood)/.test(_txt);
+      const lightScheme = _wantsLight && _wholeRoom && !_keepsWood;
+
       let variants;
       if (removals.length) {
         // PASSAGGIO 1 — RIMOZIONE DEDICATA: unico compito = togliere gli oggetti.
@@ -738,8 +754,17 @@ function BAMYachtApp() {
         const bases = cleared.map(c => c || img);
         // PASSAGGIO 2 — RISTILIZZO sopra l'immagine gia ripulita (in parallelo, sfalsato).
         variants = (await mapStaggered(bases, 350, b => runSample(editPrompt, b))).filter(Boolean);
+      } else if (lightScheme) {
+        // PASSAGGIO 1 — CONVERSIONE LEGNO DEDICATA: unico compito = ogni superficie in
+        // legno diventa crema chiaro. Geometria, oggetti, finestre e vista invariati.
+        const woodInstruction = "From this exact yacht interior photo, REFINISH every wood surface to a smooth matte light cream / off-white lacquer. Convert ALL wood to light cream: every wall panel and bulkhead, the ceiling with its trim and coffer/border, ALL doors and door frames, ALL window and porthole frames and surrounds, every built-in cabinet, wardrobe, drawer front and shelf, the nightstands, the desk, the bed base and its surround, and any wood moulding, skirting or handrail. Leave NO warm, orange, honey or dark wood tone anywhere — every surface that was wood must read as light cream. Change ONLY the colour and material of these wooden surfaces. Keep the EXACT same geometry, layout, every object and its position, the bed, the windows and portholes and the view outside them, the lighting direction, perspective and camera angle IDENTICAL to the original. Do not move, add or remove anything, and do not yet restyle fabrics, bedding or furniture shapes. Photorealistic, seamless, evenly lit.";
+        const lightened = await mapStaggered(Array.from({ length: N_SAMPLES }), 350, () => runSample(woodInstruction, img));
+        // se la conversione fallisce su una proposta, ripiego sull'originale
+        const bases = lightened.map(c => c || img);
+        // PASSAGGIO 2 — applico lo stile completo sopra la base gia schiarita.
+        variants = (await mapStaggered(bases, 350, b => runSample(editPrompt, b))).filter(Boolean);
       } else {
-        // Nessuna rimozione: un solo passaggio, proposte in parallelo (sfalsate).
+        // Nessuna rimozione e nessuno schema chiaro: un solo passaggio, proposte in parallelo.
         variants = (await mapStaggered(Array.from({ length: N_SAMPLES }), 350, () => runSample(editPrompt, img))).filter(Boolean);
       }
       if (!variants.length) throw new Error("Nessuna proposta generata. Riprova tra poco.");
@@ -973,11 +998,95 @@ function BAMYachtApp() {
     setPos(Math.max(2, Math.min(98, newPos)));
   }, []);
 
+  // ---- Archivio multi-broker (Supabase) ----
+  const BUCKET = "dossier-images";
+  function uuidv4() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+      const r = Math.random() * 16 | 0, v = c === "x" ? r : (r & 0x3 | 0x8); return v.toString(16);
+    });
+  }
+  function dataUrlToBlob(dataUrl) {
+    const parts = String(dataUrl).split(",");
+    const mime = (parts[0].match(/data:([^;]+)/) || [null, "image/jpeg"])[1];
+    const bin = atob(parts[1]); const len = bin.length; const arr = new Uint8Array(len);
+    for (let i = 0; i < len; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  }
+  async function blobFromAny(src) {
+    if (!src) return null;
+    if (String(src).startsWith("data:")) return dataUrlToBlob(src);
+    const r = await fetch(src); return await r.blob();
+  }
+  async function saveToArchive() {
+    if (!img || !result) return;
+    setSaveStatus("saving"); setErr(null);
+    try {
+      const sess = await supabaseClient.auth.getSession();
+      const uid = sess && sess.data && sess.data.session && sess.data.session.user && sess.data.session.user.id;
+      if (!uid) { setSaveStatus("error"); setErr("Sessione scaduta: rientra e riprova."); return; }
+      const dossierId = uuidv4();
+      const prefix = uid + "/" + dossierId + "/";
+      const beforeBlob = await blobFromAny(img);
+      const afterBlob = await blobFromAny(resultB64 || result);
+      const up1 = await supabaseClient.storage.from(BUCKET).upload(prefix + "before.jpg", beforeBlob, { contentType: "image/jpeg", upsert: true });
+      if (up1.error) throw up1.error;
+      const up2 = await supabaseClient.storage.from(BUCKET).upload(prefix + "after.jpg", afterBlob, { contentType: "image/jpeg", upsert: true });
+      if (up2.error) throw up2.error;
+      const titolo = (yacht.modello || yacht.cantiere)
+        ? [yacht.cantiere, yacht.modello].filter(Boolean).join(" ")
+        : ("Refit " + new Date().toLocaleDateString("it-IT"));
+      const ins = await supabaseClient.from("dossiers").insert({
+        id: dossierId, broker_id: uid, title: titolo, yacht_name: titolo,
+        yacht_builder: yacht.cantiere || null, yacht_model: yacht.modello || null, status: "ready",
+        metadata: { style_label: styleLabel, anno: yacht.anno || null, ore_motore: yacht.oreMotore || null }
+      });
+      if (ins.error) throw ins.error;
+      const insR = await supabaseClient.from("dossier_rooms").insert({
+        dossier_id: dossierId, position: 0, label: room || styleLabel || "Ambiente",
+        caption: refitText.trim(), before_path: prefix + "before.jpg", after_path: prefix + "after.jpg"
+      });
+      if (insR.error) throw insR.error;
+      setSaveStatus("saved"); setArchive(null);  // forza ricarica dell'archivio al prossimo accesso
+    } catch (e) {
+      setSaveStatus("error"); setErr("Salvataggio non riuscito: " + (e && e.message ? e.message : e));
+    }
+  }
+  async function openArchive() {
+    setShowArchive(true);
+    if (archive === null) loadArchive();
+  }
+  async function loadArchive() {
+    setArchiveBusy(true); setArchiveErr(null);
+    try {
+      const { data, error } = await supabaseClient
+        .from("dossiers")
+        .select("id,title,yacht_name,created_at,status,dossier_rooms(label,caption,before_path,after_path,position)")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const items = data || [];
+      const paths = [];
+      items.forEach(function (d) { (d.dossier_rooms || []).forEach(function (r) { if (r.before_path) paths.push(r.before_path); if (r.after_path) paths.push(r.after_path); }); });
+      const signed = {};
+      if (paths.length) {
+        const sg = await supabaseClient.storage.from(BUCKET).createSignedUrls(paths, 3600);
+        (sg.data || []).forEach(function (s) { if (s && s.path && s.signedUrl) signed[s.path] = s.signedUrl; });
+      }
+      items.forEach(function (d) { (d.dossier_rooms || []).forEach(function (r) { r.before_signed = signed[r.before_path]; r.after_signed = signed[r.after_path]; }); });
+      setArchive(items);
+    } catch (e) {
+      setArchiveErr(e && e.message ? e.message : String(e));
+    } finally {
+      setArchiveBusy(false);
+    }
+  }
+
   const G = "'Cormorant Garamond', Georgia, serif";
 
   return React.createElement("div", null,
     React.createElement("header", null,
       React.createElement("button", { className: "gear" + (token ? " ok" : ""), onClick: () => setShowSettings(true), title: "Impostazioni Replicate" }, "\u2699"),
+      React.createElement("button", { onClick: openArchive, title: "I miei dossier", style: { position: "absolute", left: 62, top: "50%", transform: "translateY(-50%)", background: "transparent", border: "1px solid rgba(201,168,76,.18)", color: "rgba(201,168,76,.62)", height: 34, padding: "0 16px", borderRadius: 18, cursor: "pointer", fontFamily: G, fontSize: 12, letterSpacing: ".16em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 7 } }, "\u25A6 Archivio"),
       React.createElement(BAMLogo, null),
       React.createElement("span", { className: "badge" }, "BAM VISION · KONTEXT")
     ),
@@ -998,6 +1107,47 @@ function BAMYachtApp() {
           token && React.createElement("button", { className: "sbtn", onClick: clearToken }, "Rimuovi Token"),
           React.createElement("button", { className: "sbtn", onClick: () => setShowSettings(false) }, "Annulla"),
           React.createElement("button", { className: "pbtn", onClick: saveToken, disabled: !tokenInput.trim() && !token }, "Salva")
+        )
+      )
+    ),
+    showArchive && React.createElement("div", { className: "modal-bg", onClick: (e) => { if (e.target.classList.contains("modal-bg")) setShowArchive(false); } },
+      React.createElement("div", { className: "modal", style: { maxWidth: 760, maxHeight: "84vh", overflowY: "auto" } },
+        React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 } },
+          React.createElement("div", { style: { fontFamily: G, fontSize: 22, color: "#e8dcc8", fontWeight: 300, letterSpacing: ".05em" } }, "I miei dossier"),
+          React.createElement("button", { className: "sbtn", onClick: () => { setArchive(null); loadArchive(); }, disabled: archiveBusy }, "Aggiorna")
+        ),
+        React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.4)", marginBottom: 22, lineHeight: 1.6 } }, "I render che salvi restano qui, nel tuo archivio privato."),
+        archiveBusy && React.createElement("div", { style: { color: "rgba(232,220,200,.5)", fontSize: 14, padding: "20px 0" } }, "Caricamento\u2026"),
+        archiveErr && React.createElement("div", { style: { color: "#e08a7a", fontSize: 13, padding: "12px 0" } }, archiveErr),
+        !archiveBusy && !archiveErr && archive && archive.length === 0 && React.createElement("div", { style: { color: "rgba(232,220,200,.45)", fontSize: 14, padding: "24px 0", textAlign: "center" } }, "Non hai ancora salvato nessun dossier. Genera un refit e premi \u00ABSalva in archivio\u00BB."),
+        !archiveBusy && archive && archive.length > 0 && React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))", gap: 14 } },
+          archive.map(function (d) {
+            const r = (d.dossier_rooms || [])[0] || {};
+            const open = archiveOpen === d.id;
+            const dt = d.created_at ? new Date(d.created_at).toLocaleDateString("it-IT") : "";
+            return React.createElement("div", { key: d.id, onClick: () => setArchiveOpen(open ? null : d.id), style: { border: "1px solid rgba(201,168,76,.16)", borderRadius: 4, overflow: "hidden", cursor: "pointer", background: "rgba(0,0,0,.18)", gridColumn: open ? "1 / -1" : "auto" } },
+              open
+                ? React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 2 } },
+                    React.createElement("div", { style: { position: "relative" } },
+                      React.createElement("img", { src: r.before_signed, alt: "Prima", style: { width: "100%", height: 200, objectFit: "cover", display: "block" } }),
+                      React.createElement("div", { style: { position: "absolute", top: 8, left: 8, background: "rgba(8,12,24,.72)", padding: "3px 10px", fontSize: 9, letterSpacing: ".18em", color: "rgba(232,220,200,.7)", textTransform: "uppercase", borderRadius: 2 } }, "Prima")
+                    ),
+                    React.createElement("div", { style: { position: "relative" } },
+                      React.createElement("img", { src: r.after_signed, alt: "Dopo", style: { width: "100%", height: 200, objectFit: "cover", display: "block" } }),
+                      React.createElement("div", { style: { position: "absolute", top: 8, left: 8, background: "rgba(201,168,76,.86)", padding: "3px 10px", fontSize: 9, letterSpacing: ".16em", color: "#060a14", textTransform: "uppercase", borderRadius: 2, fontWeight: 600 } }, "Dopo")
+                    )
+                  )
+                : React.createElement("img", { src: r.after_signed, alt: d.title, style: { width: "100%", height: 132, objectFit: "cover", display: "block", background: "#0b1020" } }),
+              React.createElement("div", { style: { padding: "10px 12px" } },
+                React.createElement("div", { style: { fontFamily: G, fontSize: 16, color: "#e8dcc8" } }, d.title || "Senza titolo"),
+                React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.4)", marginTop: 3, letterSpacing: ".04em" } }, [r.label, dt].filter(Boolean).join(" \u00B7 ")),
+                open && r.caption && React.createElement("div", { style: { fontSize: 12, color: "rgba(232,220,200,.55)", marginTop: 8, lineHeight: 1.5 } }, r.caption)
+              )
+            );
+          })
+        ),
+        React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: 24 } },
+          React.createElement("button", { className: "pbtn", onClick: () => setShowArchive(false) }, "Chiudi")
         )
       )
     ),
@@ -1137,8 +1287,9 @@ function BAMYachtApp() {
         ),
         React.createElement("div", { style: { display: "flex", justifyContent: "center", gap: 12, marginTop: 24, flexWrap: "wrap" } },
           React.createElement("button", { className: "pbtn", onClick: downloadPDF, disabled: pdfBusy || !resultB64 }, pdfBusy ? "Creazione PDF…" : !resultB64 ? "Preparazione PDF…" : "↓ Scarica PDF"),
+          React.createElement("button", { className: "pbtn", onClick: saveToArchive, disabled: saveStatus === "saving" || saveStatus === "saved" || !result }, saveStatus === "saving" ? "Salvataggio…" : saveStatus === "saved" ? "Salvato ✓" : "★ Salva in archivio"),
           React.createElement("a", { href: result, target: "_blank", rel: "noopener noreferrer", className: "olink" }, "Apri render ↗"),
-          React.createElement("button", { className: "sbtn", onClick: () => { setResult(null); setResultB64(null); setErr(null); } }, "Nuovo Render")
+          React.createElement("button", { className: "sbtn", onClick: () => { setResult(null); setResultB64(null); setErr(null); setSaveStatus(null); } }, "Nuovo Render")
         )
       )
     ),
