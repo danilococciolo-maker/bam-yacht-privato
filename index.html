@@ -542,6 +542,12 @@ function BAMYachtApp() {
   const [adminBusy, setAdminBusy] = useState(false);
   const [adminErr, setAdminErr] = useState(null);
   const [costPerRender, setCostPerRender] = useState("0.10");
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [fbMsg, setFbMsg] = useState("");
+  const [fbRating, setFbRating] = useState(0);
+  const [fbBusy, setFbBusy] = useState(false);
+  const [fbDone, setFbDone] = useState(false);
+  const [fbErr, setFbErr] = useState(null);
   const isAdmin = ADMIN_EMAILS.indexOf((userEmail || "").trim().toLowerCase()) !== -1;
   const updateYacht = (k, v) => setYacht(prev => Object.assign({}, prev, { [k]: v }));
   const fileRef = useRef();
@@ -1270,6 +1276,22 @@ function BAMYachtApp() {
       setShareBusy(false);
     }
   }
+  async function submitFeedback() {
+    if (!fbMsg.trim()) { setFbErr("Scrivi un messaggio."); return; }
+    setFbBusy(true); setFbErr(null);
+    try {
+      const sess = await supabaseClient.auth.getSession();
+      const user = sess && sess.data && sess.data.session && sess.data.session.user;
+      if (!user) { setFbErr("Sessione scaduta: rientra e riprova."); setFbBusy(false); return; }
+      const ins = await supabaseClient.from("feedback").insert({ user_id: user.id, email: user.email || null, message: fbMsg.trim(), rating: fbRating || null, context: "app" });
+      if (ins.error) throw ins.error;
+      setFbDone(true); setFbMsg(""); setFbRating(0);
+    } catch (e) {
+      setFbErr("Invio non riuscito: " + (e && e.message ? e.message : e));
+    } finally {
+      setFbBusy(false);
+    }
+  }
   async function openAdmin() {
     setShowAdmin(true);
     setAdminBusy(true); setAdminErr(null);
@@ -1519,12 +1541,52 @@ function BAMYachtApp() {
                   )
                 );
               })
+            ),
+            React.createElement("div", { style: { fontFamily: G, fontSize: 18, color: "#e8dcc8", margin: "26px 0 12px", letterSpacing: ".03em" } }, "Feedback"),
+            React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
+              (adminData.feedback || []).length === 0 && React.createElement("div", { style: { color: "rgba(232,220,200,.4)", fontSize: 13 } }, "Nessun feedback ancora."),
+              (adminData.feedback || []).map(function (f, i) {
+                return React.createElement("div", { key: i, style: { padding: "10px 12px", background: "rgba(0,0,0,.16)", border: "1px solid rgba(201,168,76,.1)", borderRadius: 3 } },
+                  React.createElement("div", { style: { display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 4, flexWrap: "wrap" } },
+                    React.createElement("div", { style: { fontSize: 12, color: "#c9a84c" } }, (f.who || "Anonimo") + (f.rating ? "  \u00B7  " + "\u2605".repeat(f.rating) : "")),
+                    React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.4)" } }, fdate(f.created_at))
+                  ),
+                  React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.75)", lineHeight: 1.5, fontFamily: "'Crimson Text', Georgia, serif" } }, f.message)
+                );
+              })
             )
           );
         })(),
         React.createElement("div", { style: { display: "flex", justifyContent: "flex-end", marginTop: 26 } },
           React.createElement("button", { className: "pbtn", onClick: () => setShowAdmin(false) }, "Chiudi")
         )
+      )
+    ),
+    React.createElement("button", { onClick: () => { setShowFeedback(true); setFbDone(false); setFbErr(null); }, title: "Feedback", style: { position: "fixed", right: 18, bottom: 18, zIndex: 50, background: "rgba(26,37,64,.95)", border: "1px solid rgba(201,168,76,.35)", color: "#c9a84c", height: 44, padding: "0 18px", borderRadius: 24, cursor: "pointer", fontFamily: G, fontSize: 13, letterSpacing: ".1em", textTransform: "uppercase", boxShadow: "0 6px 20px rgba(0,0,0,.35)", display: "flex", alignItems: "center", gap: 8 } }, "\uD83D\uDCAC Feedback"),
+    showFeedback && React.createElement("div", { className: "modal-bg", onClick: (e) => { if (e.target.classList.contains("modal-bg")) setShowFeedback(false); } },
+      React.createElement("div", { className: "modal", style: { maxWidth: 480 } },
+        React.createElement("div", { style: { fontFamily: G, fontSize: 22, color: "#e8dcc8", marginBottom: 6, fontWeight: 300, letterSpacing: ".05em" } }, "Il tuo feedback"),
+        fbDone
+          ? React.createElement("div", null,
+              React.createElement("div", { style: { fontSize: 14, color: "rgba(232,220,200,.7)", lineHeight: 1.6, margin: "14px 0 24px" } }, "Grazie, ricevuto. Ogni segnalazione ci aiuta a migliorare BAM Vision."),
+              React.createElement("div", { style: { display: "flex", justifyContent: "flex-end" } },
+                React.createElement("button", { className: "pbtn", onClick: () => setShowFeedback(false) }, "Chiudi")
+              )
+            )
+          : React.createElement("div", null,
+              React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.45)", marginBottom: 18, lineHeight: 1.6 } }, "Un problema, un'idea, qualcosa che non va o che ti piacerebbe avere. Scrivici pure."),
+              React.createElement("div", { style: { display: "flex", gap: 6, marginBottom: 16 } },
+                [1, 2, 3, 4, 5].map(function (n) {
+                  return React.createElement("button", { key: n, onClick: () => setFbRating(n === fbRating ? 0 : n), style: { background: "transparent", border: "none", cursor: "pointer", fontSize: 26, color: n <= fbRating ? "#c9a84c" : "rgba(232,220,200,.25)", padding: 0, lineHeight: 1 } }, "\u2605");
+                })
+              ),
+              React.createElement("textarea", { className: "inp", value: fbMsg, onChange: (e) => setFbMsg(e.target.value), placeholder: "Scrivi qui\u2026", rows: 5, style: { width: "100%", resize: "vertical", minHeight: 110, fontFamily: "'Crimson Text', Georgia, serif", fontSize: 14, lineHeight: 1.5 } }),
+              fbErr && React.createElement("div", { style: { color: "#e08a7a", fontSize: 12.5, marginTop: 12, lineHeight: 1.5 } }, fbErr),
+              React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 22, justifyContent: "flex-end", flexWrap: "wrap" } },
+                React.createElement("button", { className: "sbtn", onClick: () => setShowFeedback(false) }, "Annulla"),
+                React.createElement("button", { className: "pbtn", onClick: submitFeedback, disabled: fbBusy || !fbMsg.trim() }, fbBusy ? "Invio\u2026" : "Invia")
+              )
+            )
       )
     ),
     React.createElement("main", null,
