@@ -241,9 +241,12 @@ const N_SAMPLES = 3;
 // ====================== MOTORE VIDEO (Veo 3.1 i2v + merge) ======================
 const VEO_ENDPOINT = "/v1/models/google/veo-3.1/predictions";
 const MERGE_MODEL_ENDPOINT = "/v1/models/lucataco/video-merge"; // modello community: serve la version
+const MUSIC_MERGE_MODEL_ENDPOINT = "/v1/models/lucataco/video-audio-merge"; // community: serve la version
+const MUSIC_URL = "https://raw.githubusercontent.com/SoundSafari/CC0-1.0-Music/main/freepd.com/Martini%20Sunset.mp3"; // CC0 / dominio pubblico
 const VIDEO_N_SAMPLES = 3; // versioni Veo per foto, poi scelgo la migliore
 const VIDEO_JOB_KEY = "bam_video_job_v1"; // salvataggio locale per ripresa/riuso
 const SAVE_VIDEO_ENDPOINT = "/api/save-video"; // copia video su Supabase (permanente)
+const CROSSFADE_ENDPOINT = "/api/crossfade"; // unione con dissolvenza + musica (ffmpeg)
 const VIDEO_BUCKET = "dossier-videos";
 const PROMPT_VEO_MOVE = "Smooth, steady, continuous cinematic camera move through this luxury yacht interior at a natural flowing pace that calmly reveals the space; fluid and confident, neither slow and static nor fast and rushed. Reproduce the provided image with absolute fidelity. Every object stays fully opaque, solid and present for the entire clip: nothing becomes transparent, translucent, glassy, ghosted, faded or dissolved, no furniture disappears or loses its shape, columns and walls stay solid. Keep every material, color, finish and texture EXACTLY as in the image: do not change any metal, do not turn steel, chrome, brushed or satin metal into gold or brass, do not recolor anything, do not change any fabric, upholstery pattern or wood tone, do not restyle or redesign anything. All furniture is solid and rigid: every cabinet, drawer, door, hatch and panel stays fully closed and completely static, nothing opens or moves. No surface deforms, melts, smears, warps, stretches, ripples or morphs; surfaces stay sharp and stable at all times. Do not add, remove, move or alter any object, window, curtain, light fixture or decoration. No new objects, no people, no text. Architecture, columns, lines and proportions stay perfectly fixed. Soft balanced realistic light, photorealistic. Confident continuous camera, smooth and stable.";
 const VIDEO_JUDGE_PROMPT = "You are a strict quality inspector for luxury yacht interior videos. You are given a short AI-generated video (first input) and the original reference image it was generated from (second input). TASK 1 - stability: watch the whole video, especially the second half, for AI defects: any furniture, cabinet, column or wall that becomes transparent, translucent, ghosted, faded, dissolves or disappears; melting, warping, morphing, stretching or rippling of surfaces; cabinet doors or drawers opening; straight lines bending; a straight sofa turning into an angled or corner sofa, or any piece changing its shape. TASK 2 - fidelity: compare the video with the reference image and check material and color fidelity: chrome or steel turning into gold or brass, any color shift, any fabric, upholstery pattern or wood tone changing, any restyling. Ignore differences caused only by camera movement, zoom, framing or lighting. Reply with STRICT JSON only and nothing else, exactly in this form: {\"move_score\": integer 0-100 where 100 means perfectly stable with zero defects, \"fidelity\": integer 0-100 where 100 means materials and colors identical to the reference, \"notes\": \"short description or none\"}.";
@@ -551,18 +554,42 @@ async function makeRoomVideo(item, token, onLog) {
   return { label: name, url: best.url, move: best.move, fid: best.fid, room_id: item.room_id || null, kind: item.kind || null };
 }
 
-// Unisce piu' clip in UN solo mp4 (lucataco/video-merge, modello community), tiene l'audio.
-async function mergeClips(urls, token) {
-  const mRes = await fetch(MERGE_MODEL_ENDPOINT, { headers: { "Authorization": "Token " + token } });
-  if (!mRes.ok) throw new Error("Modello di unione non raggiungibile (" + mRes.status + ").");
-  const mModel = await mRes.json();
-  const ver = mModel && mModel.latest_version && mModel.latest_version.id;
-  if (!ver) throw new Error("Versione del modello di unione non trovata.");
-  let pred = await replicateCreate(PREDICTIONS_ENDPOINT, token, { version: ver, input: { video_files: urls, keep_audio: true } });
+// Risolve la versione di un modello community.
+async function modelVersion(endpoint, token) {
+  const r = await fetch(endpoint, { headers: { "Authorization": "Token " + token } });
+  if (!r.ok) throw new Error("Modello non raggiungibile (" + r.status + ").");
+  const m = await r.json();
+  const v = m && m.latest_version && m.latest_version.id;
+  if (!v) throw new Error("Versione del modello non trovata.");
+  return v;
+}
+
+// Sovrappone UNA traccia musicale su tutta la durata del video.
+async function addMusic(videoUrl, musicUrl, token) {
+  const ver = await modelVersion(MUSIC_MERGE_MODEL_ENDPOINT, token);
+  let pred = await replicateCreate(PREDICTIONS_ENDPOINT, token, { version: ver, input: { video_file: videoUrl, audio_file: musicUrl, replace_audio: true, duration_mode: "video", audio_volume: 0.85 } });
   pred = await replicatePoll(pred, token, 150);
   let out = pred.output;
   if (Array.isArray(out)) out = out[0];
   return out ? String(out) : null;
+}
+
+// Unisce piu' clip in UN solo mp4 e applica una musica unica su tutta la durata.
+async function mergeClips(urls, token) {
+  const ver = await modelVersion(MERGE_MODEL_ENDPOINT, token);
+  // 1) unisci le clip SENZA l'audio spezzettato
+  let pred = await replicateCreate(PREDICTIONS_ENDPOINT, token, { version: ver, input: { video_files: urls, keep_audio: false } });
+  pred = await replicatePoll(pred, token, 150);
+  let out = pred.output;
+  if (Array.isArray(out)) out = out[0];
+  const merged = out ? String(out) : null;
+  if (!merged) return null;
+  // 2) musica unica su tutto (best-effort: se fallisce resta comunque il video unito)
+  try {
+    const withMusic = await addMusic(merged, MUSIC_URL, token);
+    if (withMusic) return withMusic;
+  } catch (_) {}
+  return merged;
 }
 
 function BAMLogo() {
@@ -1438,16 +1465,42 @@ function BAMYachtApp() {
     finally { setSavedBusy(false); }
   }
 
+  async function crossfadeMerge(urls) {
+    const s = await supabaseClient.auth.getSession();
+    const sess = s && s.data ? s.data.session : null;
+    const jwt = sess ? sess.access_token : null;
+    const uid = sess && sess.user ? sess.user.id : null;
+    if (!jwt || !uid || !urls || urls.length < 2) return null;
+    const path = uid + "/" + Date.now() + "_dissolve.mp4";
+    const r = await fetch(CROSSFADE_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ urls: urls, jwt: jwt, path: path }) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (!j || !j.ok) return null;
+    let signed = null;
+    try { const sg = await supabaseClient.storage.from(VIDEO_BUCKET).createSignedUrl(path, 3600); signed = sg && sg.data ? sg.data.signedUrl : null; } catch (_) {}
+    if (!signed) return null;
+    try { await supabaseClient.from("dossier_videos").insert({ broker_id: uid, label: "Video unico", kind: "merged", is_merged: true, storage_path: path, source_count: urls.length, model: "crossfade-ffmpeg" }); } catch (_) {}
+    return signed;
+  }
+
+  // Unione: prova la dissolvenza (ffmpeg, gia' salva su Supabase); se non parte,
+  // ripiega sull'unione + musica via Replicate (stacco netto) e poi salva.
+  async function runMerge(urls) {
+    try { const cf = await crossfadeMerge(urls); if (cf) return cf; } catch (_) {}
+    const url = await mergeClips(urls, token);
+    if (url) { try { await cloudSaveVideo(url, "merged", "Video unico", null, { source_count: urls.length }); } catch (_) {} }
+    return url;
+  }
+
   async function mergeSaved() {
     const clips = (savedVideos || []).filter(function (v) { return !v.is_merged && v.url; });
     if (clips.length < 2) { setMergeErr("Servono almeno 2 clip salvate per unire."); return; }
     if (!token) { setMergeErr("Manca il token Replicate."); return; }
     setMergeErr(null); setMerging(true);
     try {
-      const url = await mergeClips(clips.map(function (c) { return c.url; }), token);
+      const url = await runMerge(clips.map(function (c) { return c.url; }));
       if (!url) throw new Error("Unione non riuscita.");
       setMergedUrl(url);
-      await cloudSaveVideo(url, "merged", "Video unico", null, { source_count: clips.length });
       loadSavedVideos();
     } catch (e) { setMergeErr(e && e.message ? e.message : String(e)); }
     finally { setMerging(false); }
@@ -1484,7 +1537,7 @@ function BAMYachtApp() {
         saveVideoJob({ ts: Date.now(), items: meta, done: done, merged: null });
       }
       setVideoProg({ done: items.length, total: items.length, name: "" });
-      push("\u2014 Fatto: " + done.length + (done.length === 1 ? " clip pronta." : " clip pronte.") + (done.length >= 2 ? " Ora puoi unirle in un video unico." : ""));
+      push("\u2014 Fatto: " + done.length + (done.length === 1 ? " clip pronta." : " clip pronte.") + (done.length >= 2 ? " Ora puoi unirle in un video unico con musica." : ""));
     } catch (e) {
       setVideoErr(e && e.message ? e.message : String(e));
     } finally {
@@ -1497,11 +1550,10 @@ function BAMYachtApp() {
     if (!videoClips || videoClips.length < 2) return;
     setMergeErr(null); setMerging(true);
     try {
-      const url = await mergeClips(videoClips.map(function (c) { return c.url; }), token);
+      const url = await runMerge(videoClips.map(function (c) { return c.url; }));
       if (!url) throw new Error("Unione non riuscita.");
       setMergedUrl(url);
       try { const j = loadVideoJob() || {}; j.merged = url; saveVideoJob(j); } catch (_) {}
-      try { await cloudSaveVideo(url, "merged", "Video unico", null, { source_count: videoClips.length }); } catch (_) {}
       loadSavedVideos();
     } catch (e) {
       setMergeErr(e && e.message ? e.message : String(e));
@@ -1720,7 +1772,7 @@ function BAMYachtApp() {
             })
           ),
           (videoClips.length >= 2 || (videoClips.length > 0 && !videoBusy)) && React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" } },
-            videoClips.length >= 2 && !mergedUrl && React.createElement("button", { className: "pbtn", onClick: mergeVideos, disabled: merging || videoBusy }, merging ? "Unisco\u2026" : "\u2728 Unisci in un video unico (" + videoClips.length + ")"),
+            videoClips.length >= 2 && !mergedUrl && React.createElement("button", { className: "pbtn", onClick: mergeVideos, disabled: merging || videoBusy }, merging ? "Unisco con dissolvenza\u2026" : "\u2728 Unisci in un video unico (" + videoClips.length + ")"),
             !videoBusy && !merging && React.createElement("button", { className: "sbtn", onClick: resetVideoSession }, "Nuova sessione")
           )
         ),
@@ -1738,7 +1790,7 @@ function BAMYachtApp() {
               );
             })
           ),
-          savedVideos && savedVideos.filter(function (v) { return !v.is_merged; }).length >= 2 && React.createElement("button", { className: "pbtn", onClick: mergeSaved, disabled: merging || videoBusy, style: { marginTop: 12 } }, merging ? "Unisco\u2026" : "\u2728 Unisci le clip salvate")
+          savedVideos && savedVideos.filter(function (v) { return !v.is_merged; }).length >= 2 && React.createElement("button", { className: "pbtn", onClick: mergeSaved, disabled: merging || videoBusy, style: { marginTop: 12 } }, merging ? "Unisco con dissolvenza\u2026" : "\u2728 Unisci le clip salvate")
         ),
         videoSelMode && archive && archive.length > 0 && React.createElement("div", { style: { position: "sticky", bottom: -1, marginTop: 18, paddingTop: 14, background: "linear-gradient(to top, #0b1020 72%, rgba(11,16,32,0))", display: "flex", flexDirection: "column", gap: 10 } },
           React.createElement("div", { style: { fontSize: 12, color: "#c9a84c", letterSpacing: ".06em" } }, videoSel.length === 0 ? "Nessuna foto selezionata" : (videoSel.length === 1 ? "1 foto selezionata" : videoSel.length + " foto selezionate")),
