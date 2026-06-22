@@ -8,7 +8,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Crimson+Text:wght@400;600&display=swap" rel="stylesheet">
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <style>
   :root{ --charcoal:#1a2540; --charcoal2:#11192e; --cream:#e8dcc8; --gold:#c9a84c; --line:rgba(232,220,200,.16); }
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -51,230 +50,458 @@
     <p style="font-family:'Crimson Text',serif;color:#e8dcc8;opacity:.55;font-size:13px;">Se vedi solo questo testo, apri la pagina <b>online</b> (su Vercel) con connessione attiva: il modulo compare da solo.</p>
   </div>
 </div>
-<script type="text/babel" data-presets="env,react">
-const { useState, useRef } = React;
+<script>
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+const {
+  useState,
+  useRef
+} = React;
 
 // --- Modelli su Replicate (passano dal proxy /v1/* gia attivo nel progetto) ---
-const KLING = "/v1/models/kwaivgi/kling-v3-video/predictions";      // Kling 3.0 pieno (1080p): movimento di camera sul render
-const VEO   = "/v1/models/google/veo-3.1/predictions";              // Veo 3.1 PIENO: before -> after (first_frame + last_frame)
+const KLING = "/v1/models/kwaivgi/kling-v3-video/predictions"; // Kling 3.0 pieno (1080p): movimento di camera sul render
+const VEO = "/v1/models/google/veo-3.1/predictions"; // Veo 3.1 PIENO: before -> after (first_frame + last_frame)
 
 // Prompt SCRITTI DALL'APP, non dal broker. Camera + blocco geometria (architettura ferma).
 const ANTIWARP = "warping walls, bending window frames, floating furniture, melting reflections, distorted straight lines, morphing objects, changing layout, added objects, removed objects, distorted perspective, people, text, watermark, logo";
 const PROMPT_KLING = "Cinematic slow dolly forward through this luxury yacht interior. The room stays perfectly still and structurally identical; only the camera glides gently with natural parallax. Soft balanced daylight, calm elegant pacing, photorealistic, no people, no text.";
-const PROMPT_VEO   = "Cinematic slow push-in through this luxury yacht interior. The architecture, windows, camera angle and proportions stay perfectly fixed; only materials, finishes and lighting refine from the original state into the elegant restyled version. Smooth seamless transition, soft balanced natural light, calm elegant pacing, photorealistic, no people, no text.";
+const PROMPT_VEO = "Cinematic slow push-in through this luxury yacht interior. The architecture, windows, camera angle and proportions stay perfectly fixed; only materials, finishes and lighting refine from the original state into the elegant restyled version. Smooth seamless transition, soft balanced natural light, calm elegant pacing, photorealistic, no people, no text.";
 
 // Ridimensiona la foto a max 1536px lato lungo, JPEG: payload leggero, sopra i 720p richiesti, sotto i limiti dei modelli.
-function resizeToDataUri(file, maxSide){
-  return new Promise((res, rej)=>{
+function resizeToDataUri(file, maxSide) {
+  return new Promise((res, rej) => {
     const img = new Image();
-    img.onload = ()=>{
-      let w = img.naturalWidth, h = img.naturalHeight;
+    img.onload = () => {
+      let w = img.naturalWidth,
+        h = img.naturalHeight;
       const m = Math.max(w, h);
-      if(m > maxSide){ const s = maxSide / m; w = Math.round(w * s); h = Math.round(h * s); }
-      const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+      if (m > maxSide) {
+        const s = maxSide / m;
+        w = Math.round(w * s);
+        h = Math.round(h * s);
+      }
+      const cv = document.createElement("canvas");
+      cv.width = w;
+      cv.height = h;
       cv.getContext("2d").drawImage(img, 0, 0, w, h);
-      try{ res(cv.toDataURL("image/jpeg", 0.92)); }catch(e){ rej(e); }
+      try {
+        res(cv.toDataURL("image/jpeg", 0.92));
+      } catch (e) {
+        rej(e);
+      }
     };
-    img.onerror = ()=> rej(new Error("Immagine non leggibile"));
+    img.onerror = () => rej(new Error("Immagine non leggibile"));
     const fr = new FileReader();
-    fr.onload = e=> { img.src = e.target.result; };
-    fr.onerror = ()=> rej(new Error("Lettura file fallita"));
+    fr.onload = e => {
+      img.src = e.target.result;
+    };
+    fr.onerror = () => rej(new Error("Lettura file fallita"));
     fr.readAsDataURL(file);
   });
 }
 
 // Crea la prediction con retry sui sovraccarichi (429/503/502), come nell'app vera.
-async function rCreate(endpoint, token, input){
-  const MAX = 6; let delay = 800;
-  for(let attempt = 0; ; attempt++){
+async function rCreate(endpoint, token, input) {
+  const MAX = 6;
+  let delay = 800;
+  for (let attempt = 0;; attempt++) {
     const res = await fetch(endpoint, {
-      method:"POST",
-      headers:{ "Authorization":"Token "+token, "Content-Type":"application/json" },
-      body: JSON.stringify({ input })
+      method: "POST",
+      headers: {
+        "Authorization": "Token " + token,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        input
+      })
     });
-    if(res.status===401) throw new Error("Token Replicate non valido.");
-    if(res.status===402) throw new Error("Credito Replicate esaurito.");
-    if((res.status===429 || res.status===503 || res.status===502) && attempt < MAX){
+    if (res.status === 401) throw new Error("Token Replicate non valido.");
+    if (res.status === 402) throw new Error("Credito Replicate esaurito.");
+    if ((res.status === 429 || res.status === 503 || res.status === 502) && attempt < MAX) {
       const ra = parseFloat(res.headers.get("retry-after"));
-      const wait = (!isNaN(ra) && ra > 0) ? Math.min(ra*1000, 8000) : delay;
-      await new Promise(r=> setTimeout(r, wait));
+      const wait = !isNaN(ra) && ra > 0 ? Math.min(ra * 1000, 8000) : delay;
+      await new Promise(r => setTimeout(r, wait));
       delay = Math.min(Math.round(delay * 1.7), 8000);
       continue;
     }
-    if(!res.ok){ const t = await res.text(); throw new Error("Replicate "+res.status+": "+t.slice(0,260)); }
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error("Replicate " + res.status + ": " + t.slice(0, 260));
+    }
     return res.json();
   }
 }
-
-async function rPoll(pred, token, maxAttempts){
+async function rPoll(pred, token, maxAttempts) {
   let a = 0;
-  while((pred.status==="starting" || pred.status==="processing") && a < maxAttempts){
-    await new Promise(r=> setTimeout(r, 3000));
+  while ((pred.status === "starting" || pred.status === "processing") && a < maxAttempts) {
+    await new Promise(r => setTimeout(r, 3000));
     const path = new URL(pred.urls.get).pathname;
-    const pr = await fetch(path, { headers:{ "Authorization":"Token "+token } });
-    if(pr.ok) pred = await pr.json();
+    const pr = await fetch(path, {
+      headers: {
+        "Authorization": "Token " + token
+      }
+    });
+    if (pr.ok) pred = await pr.json();
     a++;
   }
-  if(pred.status!=="succeeded") throw new Error("Generazione non riuscita: "+(pred.error||pred.status));
+  if (pred.status !== "succeeded") throw new Error("Generazione non riuscita: " + (pred.error || pred.status));
   let out = pred.output;
-  if(Array.isArray(out)) out = out[0];
-  if(out && typeof out==="object" && out.url) out = out.url;
+  if (Array.isArray(out)) out = out[0];
+  if (out && typeof out === "object" && out.url) out = out.url;
   return out; // URL del video
 }
 
 // Genera UNA clip: un tentativo + un secondo tentativo se fallisce o torna vuota.
-async function genClip(endpoint, token, input, maxAttempts){
+async function genClip(endpoint, token, input, maxAttempts) {
   let lastErr = null;
-  for(let t = 0; t < 2; t++){
-    try{
+  for (let t = 0; t < 2; t++) {
+    try {
       const pred = await rCreate(endpoint, token, input);
       const url = await rPoll(pred, token, maxAttempts);
-      if(url) return url;
-    }catch(e){ lastErr = e; }
-    await new Promise(r=> setTimeout(r, 1500));
+      if (url) return url;
+    } catch (e) {
+      lastErr = e;
+    }
+    await new Promise(r => setTimeout(r, 1500));
   }
-  if(lastErr) throw lastErr;
+  if (lastErr) throw lastErr;
   return null;
 }
 
 // Per ogni stanza: Veo 3.1 (se c'e il PRIMA) la trasformazione, poi Kling 3.0 il movimento sul DOPO. Sempre tutti e due al massimo.
-async function makeRoomClips(room, token, onLog, push){
+async function makeRoomClips(room, token, onLog, push) {
   const after = await resizeToDataUri(room.afterFile, 1536);
-  if(room.beforeFile){
+  if (room.beforeFile) {
     const before = await resizeToDataUri(room.beforeFile, 1536);
-    onLog(room.label+": Veo 3.1 \u2014 trasformazione prima\u2192dopo\u2026");
+    onLog(room.label + ": Veo 3.1 \u2014 trasformazione prima\u2192dopo\u2026");
     const url = await genClip(VEO, token, {
-      prompt: PROMPT_VEO, first_frame: before, last_frame: after,
-      duration: 8, resolution: "1080p", generate_audio: false
+      prompt: PROMPT_VEO,
+      first_frame: before,
+      last_frame: after,
+      duration: 8,
+      resolution: "1080p",
+      generate_audio: false
     }, 300);
-    if(url){ push({ label:room.label, engine:"Veo 3.1 \u00B7 prima\u2192dopo", url }); onLog("\u2713 "+room.label+" \u2014 trasformazione pronta"); }
-    else onLog("\u2717 "+room.label+" (Veo): nessun output");
+    if (url) {
+      push({
+        label: room.label,
+        engine: "Veo 3.1 \u00B7 prima\u2192dopo",
+        url
+      });
+      onLog("\u2713 " + room.label + " \u2014 trasformazione pronta");
+    } else onLog("\u2717 " + room.label + " (Veo): nessun output");
   }
-  onLog(room.label+": Kling 3.0 \u2014 movimento nella stanza\u2026");
+  onLog(room.label + ": Kling 3.0 \u2014 movimento nella stanza\u2026");
   const url2 = await genClip(KLING, token, {
-    prompt: PROMPT_KLING, start_image: after, negative_prompt: ANTIWARP,
-    duration: 5, cfg_scale: 0.5, aspect_ratio: "16:9"
+    prompt: PROMPT_KLING,
+    start_image: after,
+    negative_prompt: ANTIWARP,
+    duration: 5,
+    cfg_scale: 0.5,
+    aspect_ratio: "16:9"
   }, 300);
-  if(url2){ push({ label:room.label, engine:"Kling 3.0 \u00B7 movimento", url:url2 }); onLog("\u2713 "+room.label+" \u2014 movimento pronto"); }
-  else onLog("\u2717 "+room.label+" (Kling): nessun output");
+  if (url2) {
+    push({
+      label: room.label,
+      engine: "Kling 3.0 \u00B7 movimento",
+      url: url2
+    });
+    onLog("\u2713 " + room.label + " \u2014 movimento pronto");
+  } else onLog("\u2717 " + room.label + " (Kling): nessun output");
 }
-
-function Slot({ label, file, onPick }){
+function Slot({
+  label,
+  file,
+  onPick
+}) {
   const ref = useRef();
   const url = file ? URL.createObjectURL(file) : null;
-  return (
-    <div className="slot">
-      <div className="ph" onClick={()=>ref.current.click()}>
-        { url ? <img src={url} alt=""/> : <span className="small" style={{opacity:.6}}>+ {label}</span> }
-      </div>
-      <div className="cap">{label}</div>
-      <input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={e=>{ if(e.target.files[0]) onPick(e.target.files[0]); }}/>
-    </div>
-  );
+  return /*#__PURE__*/_jsxs("div", {
+    className: "slot",
+    children: [/*#__PURE__*/_jsx("div", {
+      className: "ph",
+      onClick: () => ref.current.click(),
+      children: url ? /*#__PURE__*/_jsx("img", {
+        src: url,
+        alt: ""
+      }) : /*#__PURE__*/_jsxs("span", {
+        className: "small",
+        style: {
+          opacity: .6
+        },
+        children: ["+ ", label]
+      })
+    }), /*#__PURE__*/_jsx("div", {
+      className: "cap",
+      children: label
+    }), /*#__PURE__*/_jsx("input", {
+      ref: ref,
+      type: "file",
+      accept: "image/*",
+      style: {
+        display: "none"
+      },
+      onChange: e => {
+        if (e.target.files[0]) onPick(e.target.files[0]);
+      }
+    })]
+  });
 }
-
-function App(){
-  const [token, setToken] = useState(()=>{ try{ return localStorage.getItem("bam_replicate_token")||""; }catch(_){ return ""; } });
-  const [rooms, setRooms] = useState([{ id:1, label:"Salone", afterFile:null, beforeFile:null }]);
+function App() {
+  const [token, setToken] = useState(() => {
+    try {
+      return localStorage.getItem("bam_replicate_token") || "";
+    } catch (_) {
+      return "";
+    }
+  });
+  const [rooms, setRooms] = useState([{
+    id: 1,
+    label: "Salone",
+    afterFile: null,
+    beforeFile: null
+  }]);
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState("");
   const [clips, setClips] = useState([]);
   const [err, setErr] = useState("");
   const player = useRef();
   const [idx, setIdx] = useState(0);
-
-  const addLog = (s)=> setLog(p=> (p? p+"\n":"") + s);
-  const setRoom = (id, patch)=> setRooms(rs=> rs.map(r=> r.id===id ? {...r, ...patch} : r));
-  const addRoom = ()=> setRooms(rs=> [...rs, { id: Date.now(), label:"Ambiente "+(rs.length+1), afterFile:null, beforeFile:null }]);
-  const delRoom = (id)=> setRooms(rs=> rs.length>1 ? rs.filter(r=>r.id!==id) : rs);
-
-  const saveToken = ()=>{ try{ localStorage.setItem("bam_replicate_token", token.trim()); }catch(_){ } };
-
-  const run = async ()=>{
-    setErr(""); setClips([]); setLog(""); setIdx(0);
-    if(!token.trim()){ setErr("Inserisci il token Replicate."); return; }
-    const ready = rooms.filter(r=> r.afterFile);
-    if(!ready.length){ setErr("Carica almeno una foto 'DOPO'."); return; }
+  const addLog = s => setLog(p => (p ? p + "\n" : "") + s);
+  const setRoom = (id, patch) => setRooms(rs => rs.map(r => r.id === id ? {
+    ...r,
+    ...patch
+  } : r));
+  const addRoom = () => setRooms(rs => [...rs, {
+    id: Date.now(),
+    label: "Ambiente " + (rs.length + 1),
+    afterFile: null,
+    beforeFile: null
+  }]);
+  const delRoom = id => setRooms(rs => rs.length > 1 ? rs.filter(r => r.id !== id) : rs);
+  const saveToken = () => {
+    try {
+      localStorage.setItem("bam_replicate_token", token.trim());
+    } catch (_) {}
+  };
+  const run = async () => {
+    setErr("");
+    setClips([]);
+    setLog("");
+    setIdx(0);
+    if (!token.trim()) {
+      setErr("Inserisci il token Replicate.");
+      return;
+    }
+    const ready = rooms.filter(r => r.afterFile);
+    if (!ready.length) {
+      setErr("Carica almeno una foto 'DOPO'.");
+      return;
+    }
     saveToken();
     setBusy(true);
     const made = [];
-    const push = (c)=>{ made.push(c); setClips([...made]); };
-    try{
-      for(const room of ready){
-        try{ await makeRoomClips(room, token.trim(), addLog, push); }
-        catch(e){ addLog("\u2717 "+room.label+": "+(e.message||e)); }
+    const push = c => {
+      made.push(c);
+      setClips([...made]);
+    };
+    try {
+      for (const room of ready) {
+        try {
+          await makeRoomClips(room, token.trim(), addLog, push);
+        } catch (e) {
+          addLog("\u2717 " + room.label + ": " + (e.message || e));
+        }
       }
-      if(!made.length) setErr("Nessuna clip generata. Controlla token e credito Replicate.");
-      else addLog("\u2014 Fatto: "+made.length+" clip pronte.");
-    }catch(e){ setErr(e.message||String(e)); }
+      if (!made.length) setErr("Nessuna clip generata. Controlla token e credito Replicate.");else addLog("\u2014 Fatto: " + made.length + " clip pronte.");
+    } catch (e) {
+      setErr(e.message || String(e));
+    }
     setBusy(false);
   };
 
   // Riproduce le clip una dopo l'altra, muto = anteprima pulita del "video".
-  const onEnded = ()=>{ if(idx < clips.length-1){ setIdx(idx+1); setTimeout(()=>{ player.current && player.current.play(); }, 60); } };
-  const playFromStart = ()=>{ setIdx(0); setTimeout(()=>{ player.current && player.current.play(); }, 60); };
-
-  return (
-    <div className="wrap">
-      <h1>BAM Vision · Motore Video</h1>
-      <div className="tricolor"></div>
-      <p className="sub">Pagina di prova — non tocca l'app. Carichi le foto, l'app fa il video. Nessun prompt da scrivere, nessuna scelta di motore.</p>
-
-      <div className="card">
-        <label className="lab">Token Replicate</label>
-        <input type="password" value={token} onChange={e=>setToken(e.target.value)} placeholder="r8_..." />
-        <div className="hint">Lo stesso che usi nell'app (lo riprende in automatico se l'hai gia salvato).</div>
-      </div>
-
-      <div className="card">
-        <div className="row" style={{justifyContent:"space-between", alignItems:"center", marginBottom:6}}>
-          <strong style={{fontFamily:"Cormorant Garamond"}}>Stanze</strong>
-          <span className="badge">DOPO obbligatoria · PRIMA opzionale</span>
-        </div>
-        {rooms.map(r=>(
-          <div className="room" key={r.id}>
-            <div className="head">
-              <input type="text" value={r.label} onChange={e=>setRoom(r.id,{label:e.target.value})} />
-              <button className="x" onClick={()=>delRoom(r.id)}>✕</button>
-            </div>
-            <div className="slots">
-              <Slot label="DOPO (render)" file={r.afterFile} onPick={f=>setRoom(r.id,{afterFile:f})} />
-              <Slot label="PRIMA (opz.)" file={r.beforeFile} onPick={f=>setRoom(r.id,{beforeFile:f})} />
-            </div>
-            <div className="hint">{ r.beforeFile ? "Veo 3.1 (trasformazione prima\u2192dopo) + Kling 3.0 (movimento)" : "Kling 3.0 (movimento di camera sul render)" }</div>
-          </div>
-        ))}
-        <button className="btn ghost small" onClick={addRoom}>+ Aggiungi stanza</button>
-      </div>
-
-      <button className="btn" disabled={busy} onClick={run}>{ busy ? "Sto creando il video…" : "▶  Crea video" }</button>
-      { err && <p className="err">{err}</p> }
-      { log && <div className="card"><div className="log">{log}</div></div> }
-
-      { clips.length>0 && (
-        <div className="card">
-          <div className="row" style={{justifyContent:"space-between", alignItems:"center"}}>
-            <strong style={{fontFamily:"Cormorant Garamond"}}>Anteprima ({idx+1}/{clips.length} — {clips[idx].engine})</strong>
-            <button className="btn ghost small" style={{width:"auto", padding:"6px 12px"}} onClick={playFromStart}>↻ Dall'inizio</button>
-          </div>
-          <div style={{marginTop:8}}>
-            <video ref={player} key={idx} src={clips[idx].url} controls autoPlay muted playsInline onEnded={onEnded}></video>
-          </div>
-          <div style={{marginTop:10}}>
-            {clips.map((c,i)=>(
-              <div key={i} className="small" style={{padding:"4px 0", display:"flex", justifyContent:"space-between", color: i===idx ? "#e8dcc8" : "#cfc8b8"}}>
-                <span style={{cursor:"pointer"}} onClick={()=>setIdx(i)}>{i+1}. {c.label} · <span style={{opacity:.7}}>{c.engine}</span></span>
-                <a className="dl" href={c.url} target="_blank" rel="noreferrer">scarica</a>
-              </div>
-            ))}
-          </div>
-          <div className="hint">Le clip sono al massimo della qualita (Veo 3.1 pieno 1080p, Kling 3.0 pieno). Vanno una dopo l'altra in anteprima; l'unione in UN unico mp4 con musica e titoli e il passo di confezione che faremo quando portiamo tutto nell'app.</div>
-        </div>
-      )}
-    </div>
-  );
+  const onEnded = () => {
+    if (idx < clips.length - 1) {
+      setIdx(idx + 1);
+      setTimeout(() => {
+        player.current && player.current.play();
+      }, 60);
+    }
+  };
+  const playFromStart = () => {
+    setIdx(0);
+    setTimeout(() => {
+      player.current && player.current.play();
+    }, 60);
+  };
+  return /*#__PURE__*/_jsxs("div", {
+    className: "wrap",
+    children: [/*#__PURE__*/_jsx("h1", {
+      children: "BAM Vision · Motore Video"
+    }), /*#__PURE__*/_jsx("div", {
+      className: "tricolor"
+    }), /*#__PURE__*/_jsx("p", {
+      className: "sub",
+      children: "Pagina di prova — non tocca l'app. Carichi le foto, l'app fa il video. Nessun prompt da scrivere, nessuna scelta di motore."
+    }), /*#__PURE__*/_jsxs("div", {
+      className: "card",
+      children: [/*#__PURE__*/_jsx("label", {
+        className: "lab",
+        children: "Token Replicate"
+      }), /*#__PURE__*/_jsx("input", {
+        type: "password",
+        value: token,
+        onChange: e => setToken(e.target.value),
+        placeholder: "r8_..."
+      }), /*#__PURE__*/_jsx("div", {
+        className: "hint",
+        children: "Lo stesso che usi nell'app (lo riprende in automatico se l'hai gia salvato)."
+      })]
+    }), /*#__PURE__*/_jsxs("div", {
+      className: "card",
+      children: [/*#__PURE__*/_jsxs("div", {
+        className: "row",
+        style: {
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 6
+        },
+        children: [/*#__PURE__*/_jsx("strong", {
+          style: {
+            fontFamily: "Cormorant Garamond"
+          },
+          children: "Stanze"
+        }), /*#__PURE__*/_jsx("span", {
+          className: "badge",
+          children: "DOPO obbligatoria · PRIMA opzionale"
+        })]
+      }), rooms.map(r => /*#__PURE__*/_jsxs("div", {
+        className: "room",
+        children: [/*#__PURE__*/_jsxs("div", {
+          className: "head",
+          children: [/*#__PURE__*/_jsx("input", {
+            type: "text",
+            value: r.label,
+            onChange: e => setRoom(r.id, {
+              label: e.target.value
+            })
+          }), /*#__PURE__*/_jsx("button", {
+            className: "x",
+            onClick: () => delRoom(r.id),
+            children: "✕"
+          })]
+        }), /*#__PURE__*/_jsxs("div", {
+          className: "slots",
+          children: [/*#__PURE__*/_jsx(Slot, {
+            label: "DOPO (render)",
+            file: r.afterFile,
+            onPick: f => setRoom(r.id, {
+              afterFile: f
+            })
+          }), /*#__PURE__*/_jsx(Slot, {
+            label: "PRIMA (opz.)",
+            file: r.beforeFile,
+            onPick: f => setRoom(r.id, {
+              beforeFile: f
+            })
+          })]
+        }), /*#__PURE__*/_jsx("div", {
+          className: "hint",
+          children: r.beforeFile ? "Veo 3.1 (trasformazione prima\u2192dopo) + Kling 3.0 (movimento)" : "Kling 3.0 (movimento di camera sul render)"
+        })]
+      }, r.id)), /*#__PURE__*/_jsx("button", {
+        className: "btn ghost small",
+        onClick: addRoom,
+        children: "+ Aggiungi stanza"
+      })]
+    }), /*#__PURE__*/_jsx("button", {
+      className: "btn",
+      disabled: busy,
+      onClick: run,
+      children: busy ? "Sto creando il video…" : "▶  Crea video"
+    }), err && /*#__PURE__*/_jsx("p", {
+      className: "err",
+      children: err
+    }), log && /*#__PURE__*/_jsx("div", {
+      className: "card",
+      children: /*#__PURE__*/_jsx("div", {
+        className: "log",
+        children: log
+      })
+    }), clips.length > 0 && /*#__PURE__*/_jsxs("div", {
+      className: "card",
+      children: [/*#__PURE__*/_jsxs("div", {
+        className: "row",
+        style: {
+          justifyContent: "space-between",
+          alignItems: "center"
+        },
+        children: [/*#__PURE__*/_jsxs("strong", {
+          style: {
+            fontFamily: "Cormorant Garamond"
+          },
+          children: ["Anteprima (", idx + 1, "/", clips.length, " — ", clips[idx].engine, ")"]
+        }), /*#__PURE__*/_jsx("button", {
+          className: "btn ghost small",
+          style: {
+            width: "auto",
+            padding: "6px 12px"
+          },
+          onClick: playFromStart,
+          children: "↻ Dall'inizio"
+        })]
+      }), /*#__PURE__*/_jsx("div", {
+        style: {
+          marginTop: 8
+        },
+        children: /*#__PURE__*/_jsx("video", {
+          ref: player,
+          src: clips[idx].url,
+          controls: true,
+          autoPlay: true,
+          muted: true,
+          playsInline: true,
+          onEnded: onEnded
+        }, idx)
+      }), /*#__PURE__*/_jsx("div", {
+        style: {
+          marginTop: 10
+        },
+        children: clips.map((c, i) => /*#__PURE__*/_jsxs("div", {
+          className: "small",
+          style: {
+            padding: "4px 0",
+            display: "flex",
+            justifyContent: "space-between",
+            color: i === idx ? "#e8dcc8" : "#cfc8b8"
+          },
+          children: [/*#__PURE__*/_jsxs("span", {
+            style: {
+              cursor: "pointer"
+            },
+            onClick: () => setIdx(i),
+            children: [i + 1, ". ", c.label, " · ", /*#__PURE__*/_jsx("span", {
+              style: {
+                opacity: .7
+              },
+              children: c.engine
+            })]
+          }), /*#__PURE__*/_jsx("a", {
+            className: "dl",
+            href: c.url,
+            target: "_blank",
+            rel: "noreferrer",
+            children: "scarica"
+          })]
+        }, i))
+      }), /*#__PURE__*/_jsx("div", {
+        className: "hint",
+        children: "Le clip sono al massimo della qualita (Veo 3.1 pieno 1080p, Kling 3.0 pieno). Vanno una dopo l'altra in anteprima; l'unione in UN unico mp4 con musica e titoli e il passo di confezione che faremo quando portiamo tutto nell'app."
+      })]
+    })]
+  });
 }
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/_jsx(App, {}));
 </script>
 </body>
 </html>
