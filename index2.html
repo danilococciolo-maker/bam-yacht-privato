@@ -240,7 +240,7 @@ const N_SAMPLES = 3;
 
 // ====================== MOTORE VIDEO (Veo 3.1 i2v + merge) ======================
 const VEO_ENDPOINT = "/v1/models/google/veo-3.1/predictions";
-const MERGE_ENDPOINT = "/v1/models/lucataco/video-merge/predictions";
+const MERGE_MODEL_ENDPOINT = "/v1/models/lucataco/video-merge"; // modello community: serve la version
 const VIDEO_N_SAMPLES = 3; // versioni Veo per foto, poi scelgo la migliore
 const VIDEO_JOB_KEY = "bam_video_job_v1"; // salvataggio locale per ripresa/riuso
 const PROMPT_VEO_MOVE = "Smooth, steady, continuous cinematic camera move through this luxury yacht interior at a natural flowing pace that calmly reveals the space; fluid and confident, neither slow and static nor fast and rushed. Reproduce the provided image with absolute fidelity. Every object stays fully opaque, solid and present for the entire clip: nothing becomes transparent, translucent, glassy, ghosted, faded or dissolved, no furniture disappears or loses its shape, columns and walls stay solid. Keep every material, color, finish and texture EXACTLY as in the image: do not change any metal, do not turn steel, chrome, brushed or satin metal into gold or brass, do not recolor anything, do not change any fabric, upholstery pattern or wood tone, do not restyle or redesign anything. All furniture is solid and rigid: every cabinet, drawer, door, hatch and panel stays fully closed and completely static, nothing opens or moves. No surface deforms, melts, smears, warps, stretches, ripples or morphs; surfaces stay sharp and stable at all times. Do not add, remove, move or alter any object, window, curtain, light fixture or decoration. No new objects, no people, no text. Architecture, columns, lines and proportions stay perfectly fixed. Soft balanced realistic light, photorealistic. Confident continuous camera, smooth and stable.";
@@ -549,9 +549,14 @@ async function makeRoomVideo(item, token, onLog) {
   return { label: name, url: best.url, move: best.move, fid: best.fid, room_id: item.room_id || null, kind: item.kind || null };
 }
 
-// Unisce piu' clip in UN solo mp4 (lucataco/video-merge), tiene l'audio.
+// Unisce piu' clip in UN solo mp4 (lucataco/video-merge, modello community), tiene l'audio.
 async function mergeClips(urls, token) {
-  let pred = await replicateCreate(MERGE_ENDPOINT, token, { input: { video_files: urls, keep_audio: true } });
+  const mRes = await fetch(MERGE_MODEL_ENDPOINT, { headers: { "Authorization": "Token " + token } });
+  if (!mRes.ok) throw new Error("Modello di unione non raggiungibile (" + mRes.status + ").");
+  const mModel = await mRes.json();
+  const ver = mModel && mModel.latest_version && mModel.latest_version.id;
+  if (!ver) throw new Error("Versione del modello di unione non trovata.");
+  let pred = await replicateCreate(PREDICTIONS_ENDPOINT, token, { version: ver, input: { video_files: urls, keep_audio: true } });
   pred = await replicatePoll(pred, token, 150);
   let out = pred.output;
   if (Array.isArray(out)) out = out[0];
