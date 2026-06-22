@@ -51,7 +51,7 @@
     <p style="font-family:'Crimson Text',serif;color:#e8dcc8;opacity:.55;font-size:13px;">Se vedi solo questo testo, apri la pagina <b>online</b> (su Vercel) con connessione attiva: il modulo compare da solo.</p>
   </div>
 </div>
-<script type="text/babel">
+<script type="text/babel" data-presets="env,react">
 const { useState, useRef } = React;
 
 // --- Modelli su Replicate (passano dal proxy /v1/* già attivo nel progetto) ---
@@ -245,4 +245,3 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
 </html>
-
