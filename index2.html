@@ -528,7 +528,7 @@ async function makeRoomVideo(item, token, onLog) {
   const src = item.url || item.after_signed;
   const name = item.label || "Foto";
   if (!src) throw new Error(name + ": manca l'immagine.");
-  onLog(name + ": genero " + VIDEO_N_SAMPLES + " versioni (Veo 3.1 1080p)\u2026");
+  onLog(name + ": genero " + VIDEO_N_SAMPLES + " in corso\u2026");
   const gens = await Promise.all(Array.from({ length: VIDEO_N_SAMPLES }, function () {
     return veoClip(src, token).catch(function () { return null; });
   }));
@@ -605,14 +605,17 @@ function BAMYachtApp() {
   const [mergedUrl, setMergedUrl] = useState(null);
   const [merging, setMerging] = useState(false);
   const [mergeErr, setMergeErr] = useState(null);
+  const [videoProg, setVideoProg] = useState({ done: 0, total: 0, name: "" });
   const [costPerVideo, setCostPerVideo] = useState("3.00");
+  const [videoResume, setVideoResume] = useState(null);
   const videoElRef = useRef(null);
   useEffect(function () {
     if (videoSelMode && !videoBusy && videoClips.length === 0) {
       const j = loadVideoJob();
       if (j && j.done && j.done.length) { setVideoClips(j.done); setMergedUrl(j.merged || null); }
     }
-  }, [videoSelMode]);  // id render espanso nel confronto
+  }, [videoSelMode]);
+  useEffect(function () { const j = loadVideoJob(); if (j && j.done && j.done.length) setVideoResume(j); }, []);  // id render espanso nel confronto
   const [selMode, setSelMode] = useState(false);         // modalità selezione attiva
   const [selected, setSelected] = useState([]);          // id render selezionati (in ordine)
   const [pdfTitle, setPdfTitle] = useState("");          // titolo del dossier da comporre
@@ -1393,7 +1396,7 @@ function BAMYachtApp() {
   async function createVideos(items) {
     if (!token) { setVideoErr("Manca il token Replicate. Aprilo in Impostazioni."); return; }
     if (!items || !items.length) return;
-    setVideoErr(null); setVideoBusy(true); setVideoLog([]); setVideoIdx(0); setMergedUrl(null); setMergeErr(null);
+    setVideoErr(null); setVideoBusy(true); setVideoLog([]); setVideoIdx(0); setMergedUrl(null); setMergeErr(null); setVideoProg({ done: 0, total: items.length, name: "" });
     const prior = (loadVideoJob() || {}).done || [];
     const priorByKey = {}; prior.forEach(function (c) { if (c && c.key) priorByKey[c.key] = c; });
     const logArr = [];
@@ -1406,6 +1409,7 @@ function BAMYachtApp() {
       let uid = null;
       try { const au = await supabaseClient.auth.getUser(); uid = au && au.data && au.data.user ? au.data.user.id : null; } catch (_) {}
       for (let i = 0; i < items.length; i++) {
+        setVideoProg({ done: i, total: items.length, name: items[i].label || "" });
         let clip;
         if (items[i].key && priorByKey[items[i].key]) {
           clip = priorByKey[items[i].key];
@@ -1421,6 +1425,7 @@ function BAMYachtApp() {
         setVideoClips(done.slice());
         saveVideoJob({ ts: Date.now(), items: meta, done: done, merged: null });
       }
+      setVideoProg({ done: items.length, total: items.length, name: "" });
       push("\u2014 Fatto: " + done.length + (done.length === 1 ? " clip pronta." : " clip pronte.") + (done.length >= 2 ? " Ora puoi unirle in un video unico." : ""));
     } catch (e) {
       setVideoErr(e && e.message ? e.message : String(e));
@@ -1505,7 +1510,16 @@ function BAMYachtApp() {
       ),
       React.createElement(BAMLogo, null),
       React.createElement("div", { className: "hdr-right" },
-        React.createElement("span", { className: "badge" }, "BAM VISION \u00B7 KONTEXT")
+        React.createElement("span", { className: "badge" }, "BAM VISION")
+      )
+    ),
+    videoResume && !showArchive && !videoBusy && React.createElement("div", { style: { maxWidth: 760, margin: "16px auto 0", padding: "0 16px" } },
+      React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 16px", border: "1px solid rgba(201,168,76,.4)", background: "rgba(201,168,76,.08)", borderRadius: 6, flexWrap: "wrap" } },
+        React.createElement("div", { style: { fontSize: 13.5, color: "#e8dcc8", lineHeight: 1.5 } }, "\u25B6 Sessione video in sospeso \u2014 " + ((videoResume.done || []).length) + " clip pronte" + (videoResume.merged ? " + video unico" : "") + "."),
+        React.createElement("div", { style: { display: "flex", gap: 8 } },
+          React.createElement("button", { className: "pbtn", onClick: function () { setVideoResume(null); openArchive(); setVideoSelMode(true); } }, "Riprendi"),
+          React.createElement("button", { className: "sbtn", onClick: function () { setVideoResume(null); } }, "\u2715")
+        )
       )
     ),
     showSettings && React.createElement("div", { className: "modal-bg", onClick: (e) => { if (e.target.classList.contains("modal-bg")) setShowSettings(false); } },
@@ -1616,6 +1630,7 @@ function BAMYachtApp() {
         videoSelMode && archive && archive.length > 0 && React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.5)", margin: "14px 0 4px", lineHeight: 1.6 } }, "Tocca le singole foto: Prima e Dopo sono separate. Ogni foto scelta diventa un suo video, poi puoi unirle tutte in un solo filmato."),
         (videoBusy || videoClips.length > 0 || videoErr || mergedUrl) && React.createElement("div", { style: { marginTop: 18, border: "1px solid rgba(201,168,76,.22)", borderRadius: 6, padding: 16, background: "rgba(0,0,0,.22)" } },
           React.createElement("div", { style: { fontFamily: G, fontSize: 18, color: "#e8dcc8", marginBottom: 10, letterSpacing: ".03em" } }, "Video"),
+          videoBusy && React.createElement("div", { style: { fontSize: 12.5, color: "#c9a84c", background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.25)", borderRadius: 4, padding: "9px 11px", marginBottom: 12, lineHeight: 1.5 } }, "Resta su questa scheda mentre genero. L'iPad pu\u00F2 ricaricare le schede lasciate in background e interrompere: le clip gi\u00E0 pronte restano salvate, ma evita di cambiare scheda o aprire altro ora."),
           mergedUrl && React.createElement("div", { style: { marginBottom: 16, padding: 12, border: "1px solid rgba(201,168,76,.45)", borderRadius: 6, background: "rgba(201,168,76,.06)" } },
             React.createElement("div", { style: { fontFamily: G, fontSize: 16, color: "#c9a84c", marginBottom: 8 } }, "\u2728 Video unico pronto"),
             React.createElement("video", { key: "merged", src: mergedUrl, controls: true, playsInline: true, style: { width: "100%", borderRadius: 6, background: "#000", display: "block" } }),
@@ -1623,15 +1638,24 @@ function BAMYachtApp() {
           ),
           mergeErr && React.createElement("div", { style: { color: "#e08a7a", fontSize: 13, marginBottom: 10, lineHeight: 1.5 } }, mergeErr),
           videoErr && React.createElement("div", { style: { color: "#e08a7a", fontSize: 13, marginBottom: 10, lineHeight: 1.5 } }, videoErr),
-          videoLog.length > 0 && React.createElement("div", { style: { fontSize: 12.5, color: "rgba(232,220,200,.6)", lineHeight: 1.7, marginBottom: 12, whiteSpace: "pre-wrap", maxHeight: 168, overflowY: "auto" } }, videoLog.join("\n")),
+          videoBusy && React.createElement("div", { style: { marginBottom: 14 } },
+            React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 13.5, color: "#e8dcc8", marginBottom: 6 } },
+              React.createElement("span", null, "Creazione video in corso\u2026"),
+              React.createElement("span", { style: { color: "#c9a84c", fontWeight: 600 } }, (videoProg.total ? Math.round(videoProg.done / videoProg.total * 100) : 0) + "%")
+            ),
+            React.createElement("div", { style: { height: 6, borderRadius: 3, background: "rgba(232,220,200,.12)", overflow: "hidden" } },
+              React.createElement("div", { style: { height: "100%", width: (videoProg.total ? Math.round(videoProg.done / videoProg.total * 100) : 0) + "%", background: "#c9a84c", transition: "width .5s ease" } })
+            ),
+            videoProg.total > 0 && React.createElement("div", { style: { fontSize: 12, color: "rgba(232,220,200,.5)", marginTop: 6 } }, "Foto " + Math.min(videoProg.done + 1, videoProg.total) + " di " + videoProg.total + (videoProg.name ? " \u00B7 " + videoProg.name : ""))
+          ),
           videoClips.length > 0 && React.createElement("div", { style: { fontSize: 12, color: "rgba(232,220,200,.45)", marginBottom: 6 } }, "Le singole clip:"),
           videoClips.length > 0 && React.createElement("video", { ref: videoElRef, key: videoIdx, src: (videoClips[Math.min(videoIdx, videoClips.length - 1)] || {}).url, controls: true, autoPlay: false, playsInline: true, style: { width: "100%", borderRadius: 6, background: "#000", display: "block" }, onEnded: function () { setVideoIdx(function (x) { return videoClips.length > 1 ? (x + 1) % videoClips.length : x; }); } }),
           videoClips.length > 0 && React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, marginTop: 12 } },
             videoClips.map(function (c, i) {
               return React.createElement("div", { key: i, style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, fontSize: 12.5 } },
                 React.createElement("span", { onClick: function () { setVideoIdx(i); }, style: { cursor: "pointer", color: i === Math.min(videoIdx, videoClips.length - 1) ? "#c9a84c" : "rgba(232,220,200,.7)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } },
-                  (i + 1) + ". " + c.label + " \u00B7 " + (c.move != null ? "mov " + c.move : "mov n/d") + " \u00B7 " + (c.fid != null ? "fed " + c.fid : "fed n/d")),
-                React.createElement("a", { href: c.url, target: "_blank", rel: "noopener", style: { color: "#c9a84c", textDecoration: "none", whiteSpace: "nowrap" } }, "scarica")
+                  (i + 1) + ". " + c.label),
+                !videoBusy && React.createElement("a", { href: c.url, target: "_blank", rel: "noopener", style: { color: "#c9a84c", textDecoration: "none", whiteSpace: "nowrap" } }, "scarica")
               );
             })
           ),
@@ -1724,7 +1748,7 @@ function BAMYachtApp() {
                 React.createElement("span", { style: { fontSize: 12, color: "rgba(232,220,200,.5)" } }, "\u20AC / video"),
                 React.createElement("input", { className: "inp", type: "text", inputMode: "decimal", value: costPerVideo, onChange: (e) => setCostPerVideo(e.target.value), style: { width: 90, fontSize: 13 } })
               ),
-              React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.35)", flexBasis: "100%", lineHeight: 1.5 } }, "Stima: numero di video generati \u00D7 costo medio per clip Veo. Regola col valore reale di Replicate.")
+              React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.35)", flexBasis: "100%", lineHeight: 1.5 } }, "Stima: numero di video generati \u00D7 costo medio per clip video. Regola col valore reale.")
             ),
             React.createElement("div", { style: { fontFamily: G, fontSize: 18, color: "#e8dcc8", margin: "0 0 12px", letterSpacing: ".03em" } }, "Broker"),
             React.createElement("div", { style: { overflowX: "auto", marginBottom: 28 } },
