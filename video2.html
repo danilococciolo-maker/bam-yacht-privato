@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>BAM Vision · Motore Video v4</title>
+<title>BAM Vision · Motore Video v7</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Crimson+Text:wght@400;600&display=swap" rel="stylesheet">
 <script>/**
@@ -342,7 +342,7 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
 <body>
 <div id="root">
   <div style="max-width:760px;margin:0 auto;padding:40px 18px;text-align:center;font-family:'Cormorant Garamond',serif;">
-    <div style="font-size:26px;letter-spacing:.04em;color:#e8dcc8;">BAM Vision · Motore Video — v4 QUALITY GATING</div>
+    <div style="font-size:26px;letter-spacing:.04em;color:#e8dcc8;">BAM Vision · Motore Video — v7 MOVIMENTO DINAMICO</div>
     <div style="height:2px;width:54px;margin:10px auto 0;background:linear-gradient(90deg,#1f8a4c 33%,#e8dcc8 33% 66%,#b23b3b 66%);border-radius:2px;"></div>
     <p style="font-family:'Crimson Text',serif;color:#e8dcc8;opacity:.7;font-size:15px;margin-top:18px;">Caricamento in corso…</p>
     <p style="font-family:'Crimson Text',serif;color:#e8dcc8;opacity:.55;font-size:13px;">Se vedi solo questo testo, apri la pagina <b>online</b> (su Vercel) con connessione attiva: il modulo compare da solo.</p>
@@ -366,18 +366,16 @@ const {
 } = React;
 
 // --- Modelli su Replicate (passano dal proxy /v1/* gia attivo nel progetto) ---
-const KLING = "/v1/models/kwaivgi/kling-v3-video/predictions"; // Kling 3.0 pieno (1080p): movimento di camera sul render
 const VEO = "/v1/models/google/veo-3.1/predictions"; // Veo 3.1 PIENO: image-to-video (movimento sul render)
 const JUDGE = "/v1/models/lucataco/qwen2-vl-7b-instruct/predictions"; // giudice qualita: Qwen2-VL legge il video
 const N_SAMPLES = 4; // versioni generate per stanza
-const SHOW_BEST = 2; // versioni migliori mostrate
+const SHOW_BEST = 1; // mostro solo LA migliore (solo Veo, una clip per stanza)
 
 // Prompt SCRITTI DALL'APP, non dal broker. Camera + blocco geometria (architettura ferma).
-const ANTIWARP = "warping walls, bending window frames, floating furniture, melting reflections, distorted straight lines, morphing objects, changing layout, added objects, removed objects, distorted perspective, people, text, watermark, logo";
-const PROMPT_KLING = "Cinematic slow dolly forward through this luxury yacht interior. The room stays perfectly still and structurally identical; only the camera glides gently with natural parallax. Soft balanced daylight, calm elegant pacing, photorealistic, no people, no text.";
 const PROMPT_VEO = "Cinematic slow push-in through this luxury yacht interior. The architecture, windows, camera angle and proportions stay perfectly fixed; only materials, finishes and lighting refine from the original state into the elegant restyled version. Smooth seamless transition, soft balanced natural light, calm elegant pacing, photorealistic, no people, no text.";
-const PROMPT_VEO_MOVE = "Very slow, gentle, minimal cinematic forward dolly through this luxury yacht interior, smooth and restrained camera movement. Preserve the room exactly as in the image. All furniture is solid and rigid: every cabinet, drawer, door, hatch and panel stays fully closed and completely static, nothing opens or moves. No surface deforms, melts, smears, warps, stretches, ripples or morphs; wood grain, marble, metal and fabrics stay sharp and stable at all times. Do not add, remove, move or alter any object, window, curtain, light fixture or decoration. No new objects, no people, no text. Architecture, columns, lines and proportions stay perfectly fixed. Soft balanced realistic light, calm elegant pacing, photorealistic. Steady slow camera, no fast motion.";
+const PROMPT_VEO_MOVE = "Smooth, dynamic cinematic camera move through this luxury yacht interior at a brisk, confident pace that travels across the space; energetic but controlled, never slow, never static, no abrupt jerks. Reproduce the provided image with absolute fidelity. Keep every material, color, finish and texture EXACTLY as in the image: do not change any metal, do not turn steel, chrome, brushed or satin metal into gold or brass, do not recolor anything, do not change any fabric, upholstery pattern or wood tone, do not restyle or redesign anything. All furniture is solid and rigid: every cabinet, drawer, door, hatch and panel stays fully closed and completely static, nothing opens or moves. No surface deforms, melts, smears, warps, stretches, ripples or morphs; surfaces stay sharp and stable at all times. Do not add, remove, move or alter any object, window, curtain, light fixture or decoration. No new objects, no people, no text. Architecture, columns, lines and proportions stay perfectly fixed. Soft balanced realistic light, photorealistic. Confident moving camera, smooth and brisk.";
 const JUDGE_PROMPT = "You are a strict quality inspector for luxury interior videos. Watch this short AI-generated video of a yacht interior. Look only for AI generation defects, especially in the second half of the clip: melting, smearing, warping, morphing, stretching or rippling of furniture, walls, cabinets, columns or objects; cabinet doors or drawers opening or changing; objects appearing or disappearing; straight lines that bend; distorted or unstable reflections. Ignore normal smooth camera movement and lighting. Reply with STRICT JSON only and nothing else: {\"score\": integer 0-100 where 100 means perfectly stable with zero defects and lower means more visible defects, \"defects\": \"short description or none\"}.";
+const FIDELITY_PROMPT = "This single image shows two pictures side by side. LEFT is the original reference render of a yacht interior. RIGHT is a frame taken from an AI-generated video of the same room. Compare them and check material and color fidelity only: did any material, finish, color, metal or fabric change between LEFT and RIGHT? For example chrome or steel turning into gold or brass, a color shifting, an upholstery pattern or wood tone changing. Ignore differences caused only by camera angle, zoom, framing or lighting. Reply with STRICT JSON only and nothing else: {\"fidelity\": integer 0-100 where 100 means materials and colors are identical to the reference and lower means more material changes, \"changes\": \"short description or none\"}.";
 
 // Ridimensiona la foto a max 1536px lato lungo, JPEG: payload leggero, sopra i 720p richiesti, sotto i limiti dei modelli.
 function frameDataUri(file, targetW, targetH) {
@@ -472,7 +470,7 @@ async function genClip(endpoint, token, input, maxAttempts) {
   return null;
 }
 
-// Per ogni stanza: Veo 3.1 (se c'e il PRIMA) la trasformazione, poi Kling 3.0 il movimento sul DOPO. Sempre tutti e due al massimo.
+// Per ogni stanza: genera N versioni Veo 3.1, doppio giudice AI (movimento + fedelta), mostra la migliore.
 async function rPollText(pred, token, maxAttempts) {
   let a = 0;
   while ((pred.status === "starting" || pred.status === "processing") && a < maxAttempts) {
@@ -505,6 +503,77 @@ async function judgeClip(videoUrl, token) {
   return { score: score, defects: defects };
 }
 
+// Estrae un fotogramma dal video (richiede CORS sul file Replicate). Null se non leggibile.
+function extractVideoFrame(url, frac) {
+  return new Promise(function (resolve) {
+    try {
+      const v = document.createElement("video");
+      v.crossOrigin = "anonymous"; v.muted = true; v.playsInline = true; v.preload = "auto";
+      let done = false;
+      const fail = function () { if (!done) { done = true; resolve(null); } };
+      const to = setTimeout(fail, 18000);
+      v.onloadedmetadata = function () {
+        const dur = v.duration || 8;
+        const t = Math.max(0, Math.min(dur * frac, dur - 0.1));
+        v.onseeked = function () {
+          try {
+            const cv = document.createElement("canvas");
+            cv.width = 640; cv.height = 360;
+            cv.getContext("2d").drawImage(v, 0, 0, 640, 360);
+            const data = cv.toDataURL("image/jpeg", 0.9);
+            if (!done) { done = true; clearTimeout(to); resolve(data); }
+          } catch (e) { fail(); }
+        };
+        try { v.currentTime = t; } catch (e) { fail(); }
+      };
+      v.onerror = fail;
+      v.src = url;
+    } catch (e) { resolve(null); }
+  });
+}
+
+// Affianca foto originale (sinistra) e fotogramma video (destra) in una sola immagine.
+function makeComposite(refUri, frameUri) {
+  return new Promise(function (resolve) {
+    const imgA = new Image(); const imgB = new Image();
+    let la = false, lb = false;
+    const draw = function () {
+      if (!(la && lb)) return;
+      try {
+        const W = 640, H = 360, cv = document.createElement("canvas");
+        cv.width = W * 2; cv.height = H + 26;
+        const ctx = cv.getContext("2d");
+        ctx.fillStyle = "#000"; ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.drawImage(imgA, 0, 26, W, H);
+        ctx.drawImage(imgB, W, 26, W, H);
+        ctx.fillStyle = "#fff"; ctx.font = "16px sans-serif";
+        ctx.fillText("ORIGINAL", 8, 18); ctx.fillText("VIDEO", W + 8, 18);
+        resolve(cv.toDataURL("image/jpeg", 0.9));
+      } catch (e) { resolve(null); }
+    };
+    imgA.onload = function () { la = true; draw(); }; imgA.onerror = function () { resolve(null); };
+    imgB.onload = function () { lb = true; draw(); }; imgB.onerror = function () { resolve(null); };
+    imgA.src = refUri; imgB.src = frameUri;
+  });
+}
+
+// Giudice fedelta: confronta foto originale vs fotogramma video (materiali/colori). 0-100 (100 = identici).
+async function judgeFidelity(compositeUri, token) {
+  const pred = await rCreate(JUDGE, token, { media: compositeUri, prompt: FIDELITY_PROMPT, max_new_tokens: 220 });
+  const out = await rPollText(pred, token, 120);
+  let f = null, changes = "";
+  try {
+    const m = out.match(/\{[\s\S]*\}/);
+    if (m) { const o = JSON.parse(m[0]); f = (typeof o.fidelity === "number") ? o.fidelity : parseInt(o.fidelity, 10); changes = o.changes || ""; }
+  } catch (_) {}
+  if (f == null || isNaN(f)) {
+    const m2 = out.match(/fidelity["\x27\s:]+(\d{1,3})/i);
+    f = m2 ? parseInt(m2[1], 10) : null;
+  }
+  if (typeof f === "number" && !isNaN(f)) { f = Math.max(0, Math.min(100, f)); } else { f = null; }
+  return { fidelity: f, changes: changes };
+}
+
 async function makeRoomClips(room, token, onLog, push) {
   const after = await frameDataUri(room.afterFile, 1280, 720);
   onLog(room.label + ": genero " + N_SAMPLES + " versioni in parallelo (Veo 3.1 1080p)\u2026");
@@ -519,34 +588,49 @@ async function makeRoomClips(room, token, onLog, push) {
     onLog("\u2717 " + room.label + ": nessuna versione generata. " + (anyErr ? anyErr.err : ""));
     return;
   }
-  onLog(room.label + ": " + good.length + "/" + N_SAMPLES + " versioni pronte. Controllo qualit\u00E0 (giudice AI Qwen2-VL)\u2026");
+  onLog(room.label + ": " + good.length + "/" + N_SAMPLES + " versioni pronte. Doppio controllo AI (movimento + fedelt\u00E0 alla foto)\u2026");
   const judged = await Promise.all(good.map(async function (g) {
+    let deform = null, dDef = "", fid = null, fChg = "", fidChecked = false;
+    try { const r = await judgeClip(g.url, token); deform = r.score; dDef = r.defects; } catch (e) {}
     try {
-      const r = await judgeClip(g.url, token);
-      return { url: g.url, score: r.score, defects: r.defects };
-    } catch (e) {
-      return { url: g.url, score: null, defects: "giudizio non disponibile" };
-    }
+      const frame = await extractVideoFrame(g.url, 0.9);
+      if (frame) {
+        const comp = await makeComposite(after, frame);
+        if (comp) { const rf = await judgeFidelity(comp, token); fid = rf.fidelity; fChg = rf.changes; fidChecked = true; }
+      }
+    } catch (e) {}
+    let combined;
+    if (deform != null && fid != null) combined = Math.min(deform, fid);
+    else if (deform != null) combined = deform;
+    else if (fid != null) combined = fid;
+    else combined = null;
+    return { url: g.url, deform: deform, dDef: dDef, fid: fid, fChg: fChg, fidChecked: fidChecked, combined: combined };
   }));
   judged.sort(function (a, b) {
-    const sa = (a.score == null) ? -1 : a.score, sb = (b.score == null) ? -1 : b.score;
+    const sa = (a.combined == null) ? -1 : a.combined, sb = (b.combined == null) ? -1 : b.combined;
     return sb - sa;
   });
+  function clean(x) { return x && ["none", "nessuno", "n/a", ""].indexOf(x.toLowerCase().trim()) < 0; }
   judged.forEach(function (j, i) {
-    const sc = (j.score == null) ? "n/d" : (j.score + "/100");
-    const df = (j.defects && j.defects.toLowerCase() !== "none" && j.defects.toLowerCase() !== "nessuno" && j.defects.toLowerCase() !== "n/a") ? (" \u2014 " + j.defects) : "";
-    onLog("   versione " + (i + 1) + ": qualit\u00E0 " + sc + df);
+    const mv = (j.deform == null) ? "n/d" : (j.deform + "/100");
+    const fd = j.fidChecked ? ((j.fid == null) ? "n/d" : (j.fid + "/100")) : "non verif.";
+    let note = "";
+    if (clean(j.dDef)) note += " \u00B7 movimento: " + j.dDef;
+    if (j.fidChecked && clean(j.fChg)) note += " \u00B7 cambi: " + j.fChg;
+    onLog("   versione " + (i + 1) + ": movimento " + mv + ", fedelt\u00E0 " + fd + note);
   });
   const best = judged.slice(0, SHOW_BEST);
   best.forEach(function (j, i) {
+    const mv = (j.deform == null) ? "n/d" : (j.deform + "/100");
+    const fd = j.fidChecked ? ((j.fid == null) ? "n/d" : (j.fid + "/100")) : "n/d";
     push({
       label: room.label + (best.length > 1 ? (" \u00B7 opzione " + (i + 1)) : ""),
-      engine: "Veo 3.1 \u00B7 1080p \u00B7 qualit\u00E0 " + ((j.score == null) ? "n/d" : (j.score + "/100")),
+      engine: "Veo 3.1 \u00B7 1080p \u00B7 movimento " + mv + " \u00B7 fedelt\u00E0 " + fd,
       url: j.url
     });
   });
   const discarded = judged.length - best.length;
-  onLog("\u2713 " + room.label + ": mostro le " + best.length + " migliori" + (discarded > 0 ? (", scartate " + discarded) : "") + ".");
+  onLog("\u2713 " + room.label + ": mostro la versione migliore" + (discarded > 0 ? (", scartate " + discarded) : "") + ".");
 }
 
   function Slot({
@@ -678,12 +762,12 @@ function App() {
   return /*#__PURE__*/_jsxs("div", {
     className: "wrap",
     children: [/*#__PURE__*/_jsx("h1", {
-      children: "BAM Vision \u00B7 Motore Video \u2014 v4 QUALITY GATING"
+      children: "BAM Vision \u00B7 Motore Video \u2014 v7 MOVIMENTO DINAMICO"
     }), /*#__PURE__*/_jsx("div", {
       className: "tricolor"
     }), /*#__PURE__*/_jsx("p", {
       className: "sub",
-      children: "Quality gating attivo: per ogni stanza l'app genera 4 versioni, un secondo modello AI (Qwen2-VL) le esamina, scarta quelle con deformazioni e mostra solo le 2 migliori col punteggio."
+      children: "Per ogni stanza: 4 versioni generate. Un giudice AI controlla il movimento (niente deformazioni) e un secondo controllo confronta un fotogramma del video con la tua foto per verificare la fedelt\u00E0 dei materiali (es. acciaio che non diventa oro). Scarta le peggiori, mostra la migliore col punteggio."
     }), /*#__PURE__*/_jsxs("div", {
       className: "card",
       children: [/*#__PURE__*/_jsx("label", {
@@ -748,7 +832,7 @@ function App() {
           })]
         }), /*#__PURE__*/_jsx("div", {
           className: "hint",
-          children: "Veo 3.1 \u00B7 4 versioni a stanza \u00B7 giudice AI scarta le deformazioni \u00B7 mostra le 2 migliori"
+          children: "Veo 3.1 \u00B7 4 versioni \u00B7 doppio giudice AI: movimento + fedelt\u00E0 ai materiali della foto \u00B7 mostra la migliore"
         })]
       }, r.id)), /*#__PURE__*/_jsx("button", {
         className: "btn ghost small",
@@ -837,7 +921,7 @@ function App() {
         }, i))
       }), /*#__PURE__*/_jsx("div", {
         className: "hint",
-        children: "Le clip sono al massimo della qualita (Veo 3.1 pieno 1080p, Kling 3.0 pieno). Vanno una dopo l'altra in anteprima; l'unione in UN unico mp4 con musica e titoli e il passo di confezione che faremo quando portiamo tutto nell'app."
+        children: "Le clip sono al massimo della qualita (Veo 3.1 pieno 1080p). Vanno una dopo l'altra in anteprima; l'unione in UN unico mp4 con musica e titoli e il passo di confezione che faremo quando portiamo tutto nell'app."
       })]
     })]
   });
