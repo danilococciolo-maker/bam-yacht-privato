@@ -375,33 +375,25 @@ const PROMPT_KLING = "Cinematic slow dolly forward through this luxury yacht int
 const PROMPT_VEO = "Cinematic slow push-in through this luxury yacht interior. The architecture, windows, camera angle and proportions stay perfectly fixed; only materials, finishes and lighting refine from the original state into the elegant restyled version. Smooth seamless transition, soft balanced natural light, calm elegant pacing, photorealistic, no people, no text.";
 
 // Ridimensiona la foto a max 1536px lato lungo, JPEG: payload leggero, sopra i 720p richiesti, sotto i limiti dei modelli.
-function resizeToDataUri(file, maxSide) {
+function frameDataUri(file, targetW, targetH) {
+  // Ritaglia (cover) la foto a un fotogramma 16:9 fisso targetW x targetH:
+  // cosi "prima" e "dopo" hanno dimensioni IDENTICHE (richiesto da Veo first/last frame).
   return new Promise((res, rej) => {
     const img = new Image();
     img.onload = () => {
-      let w = img.naturalWidth,
-        h = img.naturalHeight;
-      const m = Math.max(w, h);
-      if (m > maxSide) {
-        const s = maxSide / m;
-        w = Math.round(w * s);
-        h = Math.round(h * s);
-      }
+      const sw = img.naturalWidth, sh = img.naturalHeight;
+      const targetRatio = targetW / targetH, srcRatio = sw / sh;
+      let cw, ch, cx, cy;
+      if (srcRatio > targetRatio) { ch = sh; cw = Math.round(sh * targetRatio); cx = Math.round((sw - cw) / 2); cy = 0; }
+      else { cw = sw; ch = Math.round(sw / targetRatio); cx = 0; cy = Math.round((sh - ch) / 2); }
       const cv = document.createElement("canvas");
-      cv.width = w;
-      cv.height = h;
-      cv.getContext("2d").drawImage(img, 0, 0, w, h);
-      try {
-        res(cv.toDataURL("image/jpeg", 0.92));
-      } catch (e) {
-        rej(e);
-      }
+      cv.width = targetW; cv.height = targetH;
+      cv.getContext("2d").drawImage(img, cx, cy, cw, ch, 0, 0, targetW, targetH);
+      try { res(cv.toDataURL("image/jpeg", 0.92)); } catch (e) { rej(e); }
     };
     img.onerror = () => rej(new Error("Immagine non leggibile"));
     const fr = new FileReader();
-    fr.onload = e => {
-      img.src = e.target.result;
-    };
+    fr.onload = e => { img.src = e.target.result; };
     fr.onerror = () => rej(new Error("Lettura file fallita"));
     fr.readAsDataURL(file);
   });
@@ -477,17 +469,16 @@ async function genClip(endpoint, token, input, maxAttempts) {
 
 // Per ogni stanza: Veo 3.1 (se c'e il PRIMA) la trasformazione, poi Kling 3.0 il movimento sul DOPO. Sempre tutti e due al massimo.
 async function makeRoomClips(room, token, onLog, push) {
-  const after = await resizeToDataUri(room.afterFile, 1536);
+  const after = await frameDataUri(room.afterFile, 1280, 720);
   if (room.beforeFile) {
-    const before = await resizeToDataUri(room.beforeFile, 1536);
+    const before = await frameDataUri(room.beforeFile, 1280, 720);
     onLog(room.label + ": Veo 3.1 \u2014 trasformazione prima\u2192dopo\u2026");
     const url = await genClip(VEO, token, {
       prompt: PROMPT_VEO,
       first_frame: before,
       last_frame: after,
       duration: 8,
-      resolution: "1080p",
-      generate_audio: false
+      resolution: "1080p"
     }, 300);
     if (url) {
       push({
