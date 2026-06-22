@@ -367,7 +367,7 @@ const {
 
 // --- Modelli su Replicate (passano dal proxy /v1/* gia attivo nel progetto) ---
 const KLING = "/v1/models/kwaivgi/kling-v3-video/predictions"; // Kling 3.0 pieno (1080p): movimento di camera sul render
-const VEO = "/v1/models/google/veo-3.1/predictions"; // Veo 3.1 PIENO: before -> after (first_frame + last_frame)
+const VEO = "/v1/models/google/veo-3.1/predictions"; // Veo 3.1 PIENO: image-to-video (movimento sul render)
 
 // Prompt SCRITTI DALL'APP, non dal broker. Camera + blocco geometria (architettura ferma).
 const ANTIWARP = "warping walls, bending window frames, floating furniture, melting reflections, distorted straight lines, morphing objects, changing layout, added objects, removed objects, distorted perspective, people, text, watermark, logo";
@@ -470,42 +470,48 @@ async function genClip(endpoint, token, input, maxAttempts) {
 // Per ogni stanza: Veo 3.1 (se c'e il PRIMA) la trasformazione, poi Kling 3.0 il movimento sul DOPO. Sempre tutti e due al massimo.
 async function makeRoomClips(room, token, onLog, push) {
   const after = await frameDataUri(room.afterFile, 1280, 720);
-  if (room.beforeFile) {
-    const before = await frameDataUri(room.beforeFile, 1280, 720);
-    onLog(room.label + ": Veo 3.1 \u2014 trasformazione prima\u2192dopo\u2026");
+  // Veo 3.1 - image-to-video standard sul render DOPO (modalita collaudata, isolata).
+  try {
+    onLog(room.label + ": Veo 3.1 \u2014 movimento cinematografico\u2026");
     const url = await genClip(VEO, token, {
-      prompt: PROMPT_VEO,
-      first_frame: before,
-      last_frame: after,
+      prompt: "Cinematic slow push-in through this luxury yacht interior. The architecture, furniture and proportions stay perfectly fixed. Only a gentle, smooth camera glide with subtle natural parallax. Soft balanced natural light, calm elegant pacing, photorealistic, no people, no text.",
+      image: after,
       duration: 8,
       resolution: "1080p"
     }, 300);
     if (url) {
       push({
         label: room.label,
-        engine: "Veo 3.1 \u00B7 prima\u2192dopo",
+        engine: "Veo 3.1 \u00B7 movimento",
         url
       });
-      onLog("\u2713 " + room.label + " \u2014 trasformazione pronta");
+      onLog("\u2713 " + room.label + " \u2014 Veo pronto");
     } else onLog("\u2717 " + room.label + " (Veo): nessun output");
+  } catch (e) {
+    onLog("\u2717 " + room.label + " (Veo): " + (e && e.message ? e.message : e));
   }
-  onLog(room.label + ": Kling 3.0 \u2014 movimento nella stanza\u2026");
-  const url2 = await genClip(KLING, token, {
-    prompt: PROMPT_KLING,
-    start_image: after,
-    negative_prompt: ANTIWARP,
-    duration: 5,
-    cfg_scale: 0.5,
-    aspect_ratio: "16:9"
-  }, 300);
-  if (url2) {
-    push({
-      label: room.label,
-      engine: "Kling 3.0 \u00B7 movimento",
-      url: url2
-    });
-    onLog("\u2713 " + room.label + " \u2014 movimento pronto");
-  } else onLog("\u2717 " + room.label + " (Kling): nessun output");
+  // Kling 3.0 - movimento sul render DOPO (motore indipendente: parte comunque).
+  try {
+    onLog(room.label + ": Kling 3.0 \u2014 movimento nella stanza\u2026");
+    const url2 = await genClip(KLING, token, {
+      prompt: PROMPT_KLING,
+      start_image: after,
+      negative_prompt: ANTIWARP,
+      duration: 5,
+      cfg_scale: 0.5,
+      aspect_ratio: "16:9"
+    }, 300);
+    if (url2) {
+      push({
+        label: room.label,
+        engine: "Kling 3.0 \u00B7 movimento",
+        url: url2
+      });
+      onLog("\u2713 " + room.label + " \u2014 Kling pronto");
+    } else onLog("\u2717 " + room.label + " (Kling): nessun output");
+  } catch (e) {
+    onLog("\u2717 " + room.label + " (Kling): " + (e && e.message ? e.message : e));
+  }
 }
 function Slot({
   label,
@@ -706,7 +712,7 @@ function App() {
           })]
         }), /*#__PURE__*/_jsx("div", {
           className: "hint",
-          children: r.beforeFile ? "Veo 3.1 (trasformazione prima\u2192dopo) + Kling 3.0 (movimento)" : "Kling 3.0 (movimento di camera sul render)"
+          children: "Veo 3.1 + Kling 3.0 \u2014 movimento cinematografico sul render DOPO"
         })]
       }, r.id)), /*#__PURE__*/_jsx("button", {
         className: "btn ghost small",
