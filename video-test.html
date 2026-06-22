@@ -349,7 +349,17 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
   </div>
 </div>
 <script>
-import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+// Ponte JSX classico: _jsx/_jsxs -> React.createElement (niente import, gira in pagina normale)
+function _jsx(type, props, key){
+  props = props || {};
+  var ch = props.children, cfg = {};
+  for (var k in props){ if (k !== "children") cfg[k] = props[k]; }
+  if (key !== undefined) cfg.key = key;
+  if (ch === undefined) return React.createElement(type, cfg);
+  if (Array.isArray(ch)) return React.createElement.apply(null, [type, cfg].concat(ch));
+  return React.createElement(type, cfg, ch);
+}
+var _jsxs = _jsx;
 const {
   useState,
   useRef
