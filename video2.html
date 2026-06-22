@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>BAM Vision · Motore Video v7</title>
+<title>BAM Vision · Motore Video v8</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Crimson+Text:wght@400;600&display=swap" rel="stylesheet">
 <script>/**
@@ -342,7 +342,7 @@ function(a,b,c){if(!Vd(b))throw Error(m(200));return Wd(null,a,b,!1,c)};Q.unmoun
 <body>
 <div id="root">
   <div style="max-width:760px;margin:0 auto;padding:40px 18px;text-align:center;font-family:'Cormorant Garamond',serif;">
-    <div style="font-size:26px;letter-spacing:.04em;color:#e8dcc8;">BAM Vision · Motore Video — v7 MOVIMENTO DINAMICO</div>
+    <div style="font-size:26px;letter-spacing:.04em;color:#e8dcc8;">BAM Vision · Motore Video — v8 MOVIMENTO EQUILIBRATO</div>
     <div style="height:2px;width:54px;margin:10px auto 0;background:linear-gradient(90deg,#1f8a4c 33%,#e8dcc8 33% 66%,#b23b3b 66%);border-radius:2px;"></div>
     <p style="font-family:'Crimson Text',serif;color:#e8dcc8;opacity:.7;font-size:15px;margin-top:18px;">Caricamento in corso…</p>
     <p style="font-family:'Crimson Text',serif;color:#e8dcc8;opacity:.55;font-size:13px;">Se vedi solo questo testo, apri la pagina <b>online</b> (su Vercel) con connessione attiva: il modulo compare da solo.</p>
@@ -373,8 +373,8 @@ const SHOW_BEST = 1; // mostro solo LA migliore (solo Veo, una clip per stanza)
 
 // Prompt SCRITTI DALL'APP, non dal broker. Camera + blocco geometria (architettura ferma).
 const PROMPT_VEO = "Cinematic slow push-in through this luxury yacht interior. The architecture, windows, camera angle and proportions stay perfectly fixed; only materials, finishes and lighting refine from the original state into the elegant restyled version. Smooth seamless transition, soft balanced natural light, calm elegant pacing, photorealistic, no people, no text.";
-const PROMPT_VEO_MOVE = "Smooth, dynamic cinematic camera move through this luxury yacht interior at a brisk, confident pace that travels across the space; energetic but controlled, never slow, never static, no abrupt jerks. Reproduce the provided image with absolute fidelity. Keep every material, color, finish and texture EXACTLY as in the image: do not change any metal, do not turn steel, chrome, brushed or satin metal into gold or brass, do not recolor anything, do not change any fabric, upholstery pattern or wood tone, do not restyle or redesign anything. All furniture is solid and rigid: every cabinet, drawer, door, hatch and panel stays fully closed and completely static, nothing opens or moves. No surface deforms, melts, smears, warps, stretches, ripples or morphs; surfaces stay sharp and stable at all times. Do not add, remove, move or alter any object, window, curtain, light fixture or decoration. No new objects, no people, no text. Architecture, columns, lines and proportions stay perfectly fixed. Soft balanced realistic light, photorealistic. Confident moving camera, smooth and brisk.";
-const JUDGE_PROMPT = "You are a strict quality inspector for luxury interior videos. Watch this short AI-generated video of a yacht interior. Look only for AI generation defects, especially in the second half of the clip: melting, smearing, warping, morphing, stretching or rippling of furniture, walls, cabinets, columns or objects; cabinet doors or drawers opening or changing; objects appearing or disappearing; straight lines that bend; distorted or unstable reflections. Ignore normal smooth camera movement and lighting. Reply with STRICT JSON only and nothing else: {\"score\": integer 0-100 where 100 means perfectly stable with zero defects and lower means more visible defects, \"defects\": \"short description or none\"}.";
+const PROMPT_VEO_MOVE = "Smooth, steady, continuous cinematic camera move through this luxury yacht interior at a natural flowing pace that calmly reveals the space; fluid and confident, neither slow and static nor fast and rushed. Reproduce the provided image with absolute fidelity. Every object stays fully opaque, solid and present for the entire clip: nothing becomes transparent, translucent, glassy, ghosted, faded or dissolved, no furniture disappears or loses its shape, columns and walls stay solid. Keep every material, color, finish and texture EXACTLY as in the image: do not change any metal, do not turn steel, chrome, brushed or satin metal into gold or brass, do not recolor anything, do not change any fabric, upholstery pattern or wood tone, do not restyle or redesign anything. All furniture is solid and rigid: every cabinet, drawer, door, hatch and panel stays fully closed and completely static, nothing opens or moves. No surface deforms, melts, smears, warps, stretches, ripples or morphs; surfaces stay sharp and stable at all times. Do not add, remove, move or alter any object, window, curtain, light fixture or decoration. No new objects, no people, no text. Architecture, columns, lines and proportions stay perfectly fixed. Soft balanced realistic light, photorealistic. Confident continuous camera, smooth and stable.";
+const JUDGE_PROMPT = "You are a strict quality inspector for luxury interior videos. Watch this short AI-generated video of a yacht interior. Look only for AI generation defects, especially in the second half of the clip: any object, furniture, cabinet, column or wall that becomes transparent, translucent, glassy, ghosted, faded, dissolves or disappears; melting, smearing, warping, morphing, stretching or rippling of surfaces; cabinet doors or drawers opening or changing; objects appearing or vanishing; straight lines that bend; distorted or unstable reflections. Ignore normal smooth camera movement and lighting. Be strict: any disappearing or transparent furniture is a serious defect. Reply with STRICT JSON only and nothing else: {\"score\": integer 0-100 where 100 means perfectly stable with zero defects and lower means more visible defects, \"defects\": \"short description or none\"}.";
 const FIDELITY_PROMPT = "This single image shows two pictures side by side. LEFT is the original reference render of a yacht interior. RIGHT is a frame taken from an AI-generated video of the same room. Compare them and check material and color fidelity only: did any material, finish, color, metal or fabric change between LEFT and RIGHT? For example chrome or steel turning into gold or brass, a color shifting, an upholstery pattern or wood tone changing. Ignore differences caused only by camera angle, zoom, framing or lighting. Reply with STRICT JSON only and nothing else: {\"fidelity\": integer 0-100 where 100 means materials and colors are identical to the reference and lower means more material changes, \"changes\": \"short description or none\"}.";
 
 // Ridimensiona la foto a max 1536px lato lungo, JPEG: payload leggero, sopra i 720p richiesti, sotto i limiti dei modelli.
@@ -762,7 +762,7 @@ function App() {
   return /*#__PURE__*/_jsxs("div", {
     className: "wrap",
     children: [/*#__PURE__*/_jsx("h1", {
-      children: "BAM Vision \u00B7 Motore Video \u2014 v7 MOVIMENTO DINAMICO"
+      children: "BAM Vision \u00B7 Motore Video \u2014 v8 MOVIMENTO EQUILIBRATO"
     }), /*#__PURE__*/_jsx("div", {
       className: "tricolor"
     }), /*#__PURE__*/_jsx("p", {
