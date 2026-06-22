@@ -1,1 +1,248 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>BAM Vision · Motore Video (prova)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Crimson+Text:wght@400;600&display=swap" rel="stylesheet">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  :root{ --charcoal:#1a2540; --charcoal2:#11192e; --cream:#e8dcc8; --gold:#c9a84c; --line:rgba(232,220,200,.16); }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body{ margin:0; background:var(--charcoal2); color:var(--cream); font-family:"Crimson Text",Georgia,serif; }
+  .wrap{ max-width:760px; margin:0 auto; padding:18px 16px 64px; }
+  h1{ font-family:"Cormorant Garamond",serif; font-weight:600; letter-spacing:.04em; font-size:26px; margin:6px 0 2px; }
+  .sub{ opacity:.7; font-size:14px; margin:0 0 18px; }
+  .card{ background:var(--charcoal); border:1px solid var(--line); border-radius:14px; padding:14px; margin:12px 0; }
+  label.lab{ display:block; font-size:13px; opacity:.8; margin:0 0 5px; }
+  input[type=text],input[type=password]{ width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:var(--charcoal2); color:var(--cream); font-size:15px; font-family:inherit; }
+  .room{ display:grid; grid-template-columns:1fr; gap:10px; border:1px dashed var(--line); border-radius:12px; padding:12px; margin:10px 0; }
+  .room .head{ display:flex; align-items:center; gap:8px; }
+  .room .head input{ flex:1; }
+  .slots{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .slot{ text-align:center; }
+  .slot .ph{ border:1px solid var(--line); border-radius:10px; height:96px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:var(--charcoal2); cursor:pointer; }
+  .slot .ph img{ width:100%; height:100%; object-fit:cover; }
+  .slot .cap{ font-size:12px; opacity:.7; margin-top:4px; }
+  .badge{ display:inline-block; font-size:11px; letter-spacing:.08em; padding:3px 8px; border:1px solid var(--gold); color:var(--gold); border-radius:999px; }
+  .btn{ width:100%; padding:13px; border-radius:11px; border:1px solid var(--gold); background:var(--gold); color:#1a1f2e; font-weight:600; font-size:16px; font-family:"Cormorant Garamond",serif; letter-spacing:.03em; cursor:pointer; }
+  .btn:disabled{ opacity:.5; cursor:default; }
+  .btn.ghost{ background:transparent; color:var(--cream); border-color:var(--line); font-weight:400; }
+  .small{ font-size:13px; }
+  .x{ background:transparent; border:1px solid var(--line); color:var(--cream); border-radius:8px; width:34px; height:34px; cursor:pointer; }
+  .row{ display:flex; gap:8px; }
+  .log{ font-size:13px; opacity:.85; white-space:pre-wrap; line-height:1.5; }
+  video{ width:100%; border-radius:12px; background:#000; display:block; }
+  a.dl{ color:var(--gold); font-size:13px; text-decoration:none; border-bottom:1px solid var(--gold); }
+  .err{ color:#ffb4a8; font-size:14px; }
+  .hint{ font-size:12px; opacity:.6; margin-top:6px; }
+  .tricolor{ height:2px; width:54px; background:linear-gradient(90deg,#1f8a4c 33%,#e8dcc8 33% 66%,#b23b3b 66%); margin:8px 0 0; border-radius:2px; }
+</style>
+</head>
+<body>
+<div id="root">
+  <div style="max-width:760px;margin:0 auto;padding:40px 18px;text-align:center;font-family:'Cormorant Garamond',serif;">
+    <div style="font-size:26px;letter-spacing:.04em;color:#e8dcc8;">BAM Vision · Motore Video</div>
+    <div style="height:2px;width:54px;margin:10px auto 0;background:linear-gradient(90deg,#1f8a4c 33%,#e8dcc8 33% 66%,#b23b3b 66%);border-radius:2px;"></div>
+    <p style="font-family:'Crimson Text',serif;color:#e8dcc8;opacity:.7;font-size:15px;margin-top:18px;">Caricamento in corso…</p>
+    <p style="font-family:'Crimson Text',serif;color:#e8dcc8;opacity:.55;font-size:13px;">Se vedi solo questo testo, apri la pagina <b>online</b> (su Vercel) con connessione attiva: il modulo compare da solo.</p>
+  </div>
+</div>
+<script type="text/babel">
+const { useState, useRef } = React;
+
+// --- Modelli su Replicate (passano dal proxy /v1/* già attivo nel progetto) ---
+const KLING = "/v1/models/kwaivgi/kling-v3-video/predictions";      // image-to-video, dolly nella stanza
+const VEO   = "/v1/models/google/veo-3.1-fast/predictions";         // before -> after (primo e ultimo frame)
+
+// Prompt SCRITTI DALL'APP, non dal broker. Solo movimento di camera + anti-deformazione.
+const ANTIWARP = "warping walls, bending window frames, floating furniture, melting reflections, distorted straight lines, morphing objects, people, text, watermark, logo";
+const PROMPT_KLING = "Slow cinematic dolly forward through this luxury yacht interior, gentle natural parallax, soft balanced daylight, calm elegant pacing, photorealistic, no people, no text";
+const PROMPT_VEO   = "Slow cinematic push-in through this luxury yacht interior as it elegantly transforms from the original worn state into the refined restyled version, smooth seamless transition, soft balanced light, calm elegant pacing, photorealistic, no people, no text";
+
+function fileToDataUri(file){
+  return new Promise((res, rej)=>{ const r=new FileReader(); r.onload=e=>res(e.target.result); r.onerror=rej; r.readAsDataURL(file); });
+}
+
+async function rCreate(endpoint, token, input){
+  const res = await fetch(endpoint, {
+    method:"POST",
+    headers:{ "Authorization":"Token "+token, "Content-Type":"application/json" },
+    body: JSON.stringify({ input })
+  });
+  if(res.status===401) throw new Error("Token Replicate non valido.");
+  if(res.status===402) throw new Error("Credito Replicate esaurito.");
+  if(!res.ok){ const t=await res.text(); throw new Error("Replicate "+res.status+": "+t.slice(0,260)); }
+  return res.json();
+}
+async function rPoll(pred, token, maxAttempts){
+  let a=0;
+  while((pred.status==="starting"||pred.status==="processing") && a<maxAttempts){
+    await new Promise(r=>setTimeout(r,3000));
+    const path = new URL(pred.urls.get).pathname;
+    const pr = await fetch(path, { headers:{ "Authorization":"Token "+token } });
+    if(pr.ok) pred = await pr.json();
+    a++;
+  }
+  if(pred.status!=="succeeded") throw new Error("Generazione non riuscita: "+(pred.error||pred.status));
+  let out = pred.output;
+  if(Array.isArray(out)) out = out[0];
+  if(out && typeof out==="object" && out.url) out = out.url;
+  return out; // URL del video
+}
+
+// Genera UNA clip per la stanza. Se c'è il "prima" -> Veo before/after, altrimenti -> Kling dolly.
+async function makeClip(room, token, onLog){
+  const after = await fileToDataUri(room.afterFile);
+  if(room.beforeFile){
+    const before = await fileToDataUri(room.beforeFile);
+    onLog(room.label+": Veo 3.1 (prima → dopo)…");
+    // NB: nomi campi Veo da confermare alla prima esecuzione (image = primo frame, last_frame = ultimo).
+    const pred = await rCreate(VEO, token, {
+      prompt: PROMPT_VEO,
+      image: before,
+      last_frame: after,
+      resolution: "1080p"
+    });
+    return { engine:"Veo 3.1 · prima→dopo", url: await rPoll(pred, token, 200) };
+  } else {
+    onLog(room.label+": Kling 3.0 (movimento nella stanza)…");
+    const pred = await rCreate(KLING, token, {
+      prompt: PROMPT_KLING,
+      start_image: after,
+      negative_prompt: ANTIWARP,
+      duration: 5,
+      mode: "pro",
+      aspect_ratio: "16:9"
+    });
+    return { engine:"Kling 3.0 · dolly", url: await rPoll(pred, token, 200) };
+  }
+}
+
+function Slot({ label, file, onPick }){
+  const ref = useRef();
+  const url = file ? URL.createObjectURL(file) : null;
+  return (
+    <div className="slot">
+      <div className="ph" onClick={()=>ref.current.click()}>
+        { url ? <img src={url} alt=""/> : <span className="small" style={{opacity:.6}}>+ {label}</span> }
+      </div>
+      <div className="cap">{label}</div>
+      <input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={e=>{ if(e.target.files[0]) onPick(e.target.files[0]); }}/>
+    </div>
+  );
+}
+
+function App(){
+  const [token, setToken] = useState(()=>{ try{ return localStorage.getItem("bam_replicate_token")||""; }catch(_){ return ""; } });
+  const [rooms, setRooms] = useState([{ id:1, label:"Salone", afterFile:null, beforeFile:null }]);
+  const [busy, setBusy] = useState(false);
+  const [log, setLog] = useState("");
+  const [clips, setClips] = useState([]);
+  const [err, setErr] = useState("");
+  const player = useRef();
+  const [idx, setIdx] = useState(0);
+
+  const addLog = (s)=> setLog(p=> (p? p+"\n":"") + s);
+  const setRoom = (id, patch)=> setRooms(rs=> rs.map(r=> r.id===id ? {...r, ...patch} : r));
+  const addRoom = ()=> setRooms(rs=> [...rs, { id: Date.now(), label:"Ambiente "+(rs.length+1), afterFile:null, beforeFile:null }]);
+  const delRoom = (id)=> setRooms(rs=> rs.length>1 ? rs.filter(r=>r.id!==id) : rs);
+
+  const saveToken = ()=>{ try{ localStorage.setItem("bam_replicate_token", token.trim()); }catch(_){ } };
+
+  const run = async ()=>{
+    setErr(""); setClips([]); setLog(""); setIdx(0);
+    if(!token.trim()){ setErr("Inserisci il token Replicate."); return; }
+    const ready = rooms.filter(r=> r.afterFile);
+    if(!ready.length){ setErr("Carica almeno una foto 'DOPO'."); return; }
+    saveToken();
+    setBusy(true);
+    const made = [];
+    try{
+      for(const room of ready){
+        try{
+          const c = await makeClip(room, token.trim(), addLog);
+          made.push({ label:room.label, ...c });
+          setClips([...made]);
+          addLog("✓ "+room.label+" pronta ("+c.engine+")");
+        }catch(e){
+          addLog("✗ "+room.label+": "+(e.message||e));
+        }
+      }
+      if(!made.length) setErr("Nessuna clip generata. Controlla il token e i nomi dei campi del modello (vedi nota).");
+    }catch(e){ setErr(e.message||String(e)); }
+    setBusy(false);
+  };
+
+  // Riproduce le clip una dopo l'altra = "il video"
+  const onEnded = ()=>{ if(idx < clips.length-1){ setIdx(idx+1); setTimeout(()=>{ player.current && player.current.play(); }, 60); } };
+
+  return (
+    <div className="wrap">
+      <h1>BAM Vision · Motore Video</h1>
+      <div className="tricolor"></div>
+      <p className="sub">Pagina di prova — non tocca l'app. Carichi le foto, l'app fa il video. Nessun prompt da scrivere.</p>
+
+      <div className="card">
+        <label className="lab">Token Replicate</label>
+        <input type="password" value={token} onChange={e=>setToken(e.target.value)} placeholder="r8_..." />
+        <div className="hint">Lo stesso che usi nell'app (lo riprende in automatico se l'hai già salvato).</div>
+      </div>
+
+      <div className="card">
+        <div className="row" style={{justifyContent:"space-between", alignItems:"center", marginBottom:6}}>
+          <strong style={{fontFamily:"Cormorant Garamond"}}>Stanze</strong>
+          <span className="badge">DOPO obbligatoria · PRIMA opzionale</span>
+        </div>
+        {rooms.map(r=>(
+          <div className="room" key={r.id}>
+            <div className="head">
+              <input type="text" value={r.label} onChange={e=>setRoom(r.id,{label:e.target.value})} />
+              <button className="x" onClick={()=>delRoom(r.id)}>✕</button>
+            </div>
+            <div className="slots">
+              <Slot label="DOPO (render)" file={r.afterFile} onPick={f=>setRoom(r.id,{afterFile:f})} />
+              <Slot label="PRIMA (opz.)" file={r.beforeFile} onPick={f=>setRoom(r.id,{beforeFile:f})} />
+            </div>
+            <div className="hint">{ r.beforeFile ? "→ Veo 3.1: transizione prima→dopo" : "→ Kling 3.0: movimento di camera sul render" }</div>
+          </div>
+        ))}
+        <button className="btn ghost small" onClick={addRoom}>+ Aggiungi stanza</button>
+      </div>
+
+      <button className="btn" disabled={busy} onClick={run}>{ busy ? "Sto creando il video…" : "▶  Crea video" }</button>
+      { err && <p className="err">{err}</p> }
+      { log && <div className="card"><div className="log">{log}</div></div> }
+
+      { clips.length>0 && (
+        <div className="card">
+          <strong style={{fontFamily:"Cormorant Garamond"}}>Anteprima ({idx+1}/{clips.length} — {clips[idx].engine})</strong>
+          <div style={{marginTop:8}}>
+            <video ref={player} src={clips[idx].url} controls autoPlay playsInline onEnded={onEnded}></video>
+          </div>
+          <div style={{marginTop:10}}>
+            {clips.map((c,i)=>(
+              <div key={i} className="small" style={{padding:"4px 0", display:"flex", justifyContent:"space-between"}}>
+                <span>{i+1}. {c.label} · <span style={{opacity:.7}}>{c.engine}</span></span>
+                <a className="dl" href={c.url} target="_blank" rel="noreferrer">scarica</a>
+              </div>
+            ))}
+          </div>
+          <div className="hint">Per ora le clip vanno una dopo l'altra. Il montaggio in UN unico mp4 con transizioni + musica lo aggiungo quando integro nell'app (Shotstack).</div>
+        </div>
+      )}
+
+      <div className="card hint">
+        Nota tecnica: i nomi esatti dei campi di Veo 3.1 (primo/ultimo frame) li confermiamo alla prima esecuzione — se Veo dà errore sul campo, me lo mandi e lo correggo in 1 minuto. Kling 3.0 è sul percorso collaudato.
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
 
