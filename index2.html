@@ -238,9 +238,11 @@ const EDIT_FALLBACK_ENDPOINT = "/v1/models/google/nano-banana/predictions";
 const JUDGE_ENDPOINT = "/v1/models/google/gemini-3-flash/predictions";
 const N_SAMPLES = 3;
 
-// ====================== MOTORE VIDEO (Veo 3.1 i2v) ======================
+// ====================== MOTORE VIDEO (Veo 3.1 i2v + merge) ======================
 const VEO_ENDPOINT = "/v1/models/google/veo-3.1/predictions";
+const MERGE_ENDPOINT = "/v1/models/lucataco/video-merge/predictions";
 const VIDEO_N_SAMPLES = 3; // versioni Veo per foto, poi scelgo la migliore
+const VIDEO_JOB_KEY = "bam_video_job_v1"; // salvataggio locale per ripresa/riuso
 const PROMPT_VEO_MOVE = "Smooth, steady, continuous cinematic camera move through this luxury yacht interior at a natural flowing pace that calmly reveals the space; fluid and confident, neither slow and static nor fast and rushed. Reproduce the provided image with absolute fidelity. Every object stays fully opaque, solid and present for the entire clip: nothing becomes transparent, translucent, glassy, ghosted, faded or dissolved, no furniture disappears or loses its shape, columns and walls stay solid. Keep every material, color, finish and texture EXACTLY as in the image: do not change any metal, do not turn steel, chrome, brushed or satin metal into gold or brass, do not recolor anything, do not change any fabric, upholstery pattern or wood tone, do not restyle or redesign anything. All furniture is solid and rigid: every cabinet, drawer, door, hatch and panel stays fully closed and completely static, nothing opens or moves. No surface deforms, melts, smears, warps, stretches, ripples or morphs; surfaces stay sharp and stable at all times. Do not add, remove, move or alter any object, window, curtain, light fixture or decoration. No new objects, no people, no text. Architecture, columns, lines and proportions stay perfectly fixed. Soft balanced realistic light, photorealistic. Confident continuous camera, smooth and stable.";
 const VIDEO_JUDGE_PROMPT = "You are a strict quality inspector for luxury yacht interior videos. You are given a short AI-generated video (first input) and the original reference image it was generated from (second input). TASK 1 - stability: watch the whole video, especially the second half, for AI defects: any furniture, cabinet, column or wall that becomes transparent, translucent, ghosted, faded, dissolves or disappears; melting, warping, morphing, stretching or rippling of surfaces; cabinet doors or drawers opening; straight lines bending; a straight sofa turning into an angled or corner sofa, or any piece changing its shape. TASK 2 - fidelity: compare the video with the reference image and check material and color fidelity: chrome or steel turning into gold or brass, any color shift, any fabric, upholstery pattern or wood tone changing, any restyling. Ignore differences caused only by camera movement, zoom, framing or lighting. Reply with STRICT JSON only and nothing else, exactly in this form: {\"move_score\": integer 0-100 where 100 means perfectly stable with zero defects, \"fidelity\": integer 0-100 where 100 means materials and colors identical to the reference, \"notes\": \"short description or none\"}.";
 
@@ -488,6 +490,11 @@ async function judgeVariant(variantUrl, userRequest, removeList, keepList, token
   } catch (_) { return { score: 50, removalOk: !checkMode }; }
 }
 
+// --- salvataggio locale del lavoro video (per ripresa e riuso clip) ---
+function saveVideoJob(job) { try { localStorage.setItem(VIDEO_JOB_KEY, JSON.stringify(job)); } catch (_) {} }
+function loadVideoJob() { try { const s = localStorage.getItem(VIDEO_JOB_KEY); return s ? JSON.parse(s) : null; } catch (_) { return null; } }
+function clearVideoJob() { try { localStorage.removeItem(VIDEO_JOB_KEY); } catch (_) {} }
+
 // Genera UNA clip Veo da una foto (URL firmato, fetchato lato Replicate).
 async function veoClip(imageUrl, token) {
   let pred = await replicateCreate(VEO_ENDPOINT, token, { input: { prompt: PROMPT_VEO_MOVE, image: imageUrl, duration: 8, resolution: "1080p" } });
@@ -542,6 +549,15 @@ async function makeRoomVideo(item, token, onLog) {
   return { label: name, url: best.url, move: best.move, fid: best.fid, room_id: item.room_id || null, kind: item.kind || null };
 }
 
+// Unisce piu' clip in UN solo mp4 (lucataco/video-merge), tiene l'audio.
+async function mergeClips(urls, token) {
+  let pred = await replicateCreate(MERGE_ENDPOINT, token, { input: { video_files: urls, keep_audio: true } });
+  pred = await replicatePoll(pred, token, 150);
+  let out = pred.output;
+  if (Array.isArray(out)) out = out[0];
+  return out ? String(out) : null;
+}
+
 function BAMLogo() {
   return React.createElement("img", { src: window.__LOGO_WHITE__, alt: "BAM Group", style: { height: "64px", width: "auto", display: "block" } });
 }
@@ -586,8 +602,17 @@ function BAMYachtApp() {
   const [videoLog, setVideoLog] = useState([]);
   const [videoClips, setVideoClips] = useState([]);
   const [videoIdx, setVideoIdx] = useState(0);
+  const [mergedUrl, setMergedUrl] = useState(null);
+  const [merging, setMerging] = useState(false);
+  const [mergeErr, setMergeErr] = useState(null);
   const [costPerVideo, setCostPerVideo] = useState("3.00");
-  const videoElRef = useRef(null);  // id render espanso nel confronto
+  const videoElRef = useRef(null);
+  useEffect(function () {
+    if (videoSelMode && !videoBusy && videoClips.length === 0) {
+      const j = loadVideoJob();
+      if (j && j.done && j.done.length) { setVideoClips(j.done); setMergedUrl(j.merged || null); }
+    }
+  }, [videoSelMode]);  // id render espanso nel confronto
   const [selMode, setSelMode] = useState(false);         // modalità selezione attiva
   const [selected, setSelected] = useState([]);          // id render selezionati (in ordine)
   const [pdfTitle, setPdfTitle] = useState("");          // titolo del dossier da comporre
@@ -1368,30 +1393,60 @@ function BAMYachtApp() {
   async function createVideos(items) {
     if (!token) { setVideoErr("Manca il token Replicate. Aprilo in Impostazioni."); return; }
     if (!items || !items.length) return;
-    setVideoErr(null); setVideoBusy(true); setVideoClips([]); setVideoLog([]); setVideoIdx(0);
+    setVideoErr(null); setVideoBusy(true); setVideoLog([]); setVideoIdx(0); setMergedUrl(null); setMergeErr(null);
+    const prior = (loadVideoJob() || {}).done || [];
+    const priorByKey = {}; prior.forEach(function (c) { if (c && c.key) priorByKey[c.key] = c; });
     const logArr = [];
     const push = function (s) { logArr.push(s); setVideoLog(logArr.slice()); };
-    const out = [];
+    const meta = items.map(function (x) { return { key: x.key, label: x.label }; });
+    const done = [];
+    setVideoClips([]);
+    saveVideoJob({ ts: Date.now(), items: meta, done: [], merged: null });
     try {
       let uid = null;
       try { const au = await supabaseClient.auth.getUser(); uid = au && au.data && au.data.user ? au.data.user.id : null; } catch (_) {}
       for (let i = 0; i < items.length; i++) {
-        const clip = await makeRoomVideo(items[i], token, push);
-        out.push(clip); setVideoClips(out.slice());
-        try {
-          await supabaseClient.from("video_generations").insert({
-            broker_id: uid, dossier_room_id: clip.room_id, label: clip.label, kind: clip.kind,
-            model: "veo-3.1", resolution: "1080p", samples: VIDEO_N_SAMPLES,
-            move_score: clip.move, fidelity_score: clip.fid
-          });
-        } catch (_) {}
+        let clip;
+        if (items[i].key && priorByKey[items[i].key]) {
+          clip = priorByKey[items[i].key];
+          push("\u21BB " + (clip.label || "Foto") + ": riuso la clip gi\u00E0 pronta (nessun costo).");
+        } else {
+          clip = await makeRoomVideo(items[i], token, push);
+          clip.key = items[i].key || null;
+          try {
+            await supabaseClient.from("video_generations").insert({ broker_id: uid, dossier_room_id: clip.room_id, label: clip.label, kind: clip.kind, model: "veo-3.1", resolution: "1080p", samples: VIDEO_N_SAMPLES, move_score: clip.move, fidelity_score: clip.fid });
+          } catch (_) {}
+        }
+        done.push(clip);
+        setVideoClips(done.slice());
+        saveVideoJob({ ts: Date.now(), items: meta, done: done, merged: null });
       }
-      push("\u2014 Fatto: " + out.length + (out.length === 1 ? " clip pronta." : " clip pronte."));
+      push("\u2014 Fatto: " + done.length + (done.length === 1 ? " clip pronta." : " clip pronte.") + (done.length >= 2 ? " Ora puoi unirle in un video unico." : ""));
     } catch (e) {
       setVideoErr(e && e.message ? e.message : String(e));
     } finally {
       setVideoBusy(false);
     }
+  }
+
+  async function mergeVideos() {
+    if (!token) { setMergeErr("Manca il token Replicate."); return; }
+    if (!videoClips || videoClips.length < 2) return;
+    setMergeErr(null); setMerging(true);
+    try {
+      const url = await mergeClips(videoClips.map(function (c) { return c.url; }), token);
+      if (!url) throw new Error("Unione non riuscita.");
+      setMergedUrl(url);
+      try { const j = loadVideoJob() || {}; j.merged = url; saveVideoJob(j); } catch (_) {}
+    } catch (e) {
+      setMergeErr(e && e.message ? e.message : String(e));
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  function resetVideoSession() {
+    clearVideoJob(); setVideoClips([]); setMergedUrl(null); setMergeErr(null); setVideoErr(null); setVideoLog([]); setVideoSel([]); setVideoIdx(0);
   }
 
   async function openArchive() {
@@ -1558,12 +1613,19 @@ function BAMYachtApp() {
             })
           );
         })(),
-        videoSelMode && archive && archive.length > 0 && React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.5)", margin: "14px 0 4px", lineHeight: 1.6 } }, "Tocca le singole foto: Prima e Dopo sono separate. Ogni foto scelta diventa un suo video."),
-        (videoBusy || videoClips.length > 0 || videoErr) && React.createElement("div", { style: { marginTop: 18, border: "1px solid rgba(201,168,76,.22)", borderRadius: 6, padding: 16, background: "rgba(0,0,0,.22)" } },
+        videoSelMode && archive && archive.length > 0 && React.createElement("div", { style: { fontSize: 13, color: "rgba(232,220,200,.5)", margin: "14px 0 4px", lineHeight: 1.6 } }, "Tocca le singole foto: Prima e Dopo sono separate. Ogni foto scelta diventa un suo video, poi puoi unirle tutte in un solo filmato."),
+        (videoBusy || videoClips.length > 0 || videoErr || mergedUrl) && React.createElement("div", { style: { marginTop: 18, border: "1px solid rgba(201,168,76,.22)", borderRadius: 6, padding: 16, background: "rgba(0,0,0,.22)" } },
           React.createElement("div", { style: { fontFamily: G, fontSize: 18, color: "#e8dcc8", marginBottom: 10, letterSpacing: ".03em" } }, "Video"),
+          mergedUrl && React.createElement("div", { style: { marginBottom: 16, padding: 12, border: "1px solid rgba(201,168,76,.45)", borderRadius: 6, background: "rgba(201,168,76,.06)" } },
+            React.createElement("div", { style: { fontFamily: G, fontSize: 16, color: "#c9a84c", marginBottom: 8 } }, "\u2728 Video unico pronto"),
+            React.createElement("video", { key: "merged", src: mergedUrl, controls: true, playsInline: true, style: { width: "100%", borderRadius: 6, background: "#000", display: "block" } }),
+            React.createElement("a", { href: mergedUrl, target: "_blank", rel: "noopener", style: { display: "inline-block", marginTop: 10, color: "#060a14", background: "#c9a84c", padding: "9px 16px", borderRadius: 4, textDecoration: "none", fontSize: 13, fontWeight: 600 } }, "\u2193 Scarica il video unico")
+          ),
+          mergeErr && React.createElement("div", { style: { color: "#e08a7a", fontSize: 13, marginBottom: 10, lineHeight: 1.5 } }, mergeErr),
           videoErr && React.createElement("div", { style: { color: "#e08a7a", fontSize: 13, marginBottom: 10, lineHeight: 1.5 } }, videoErr),
           videoLog.length > 0 && React.createElement("div", { style: { fontSize: 12.5, color: "rgba(232,220,200,.6)", lineHeight: 1.7, marginBottom: 12, whiteSpace: "pre-wrap", maxHeight: 168, overflowY: "auto" } }, videoLog.join("\n")),
-          videoClips.length > 0 && React.createElement("video", { ref: videoElRef, key: videoIdx, src: (videoClips[Math.min(videoIdx, videoClips.length - 1)] || {}).url, controls: true, autoPlay: true, playsInline: true, style: { width: "100%", borderRadius: 6, background: "#000", display: "block" }, onEnded: function () { setVideoIdx(function (x) { return videoClips.length > 1 ? (x + 1) % videoClips.length : x; }); } }),
+          videoClips.length > 0 && React.createElement("div", { style: { fontSize: 12, color: "rgba(232,220,200,.45)", marginBottom: 6 } }, "Le singole clip:"),
+          videoClips.length > 0 && React.createElement("video", { ref: videoElRef, key: videoIdx, src: (videoClips[Math.min(videoIdx, videoClips.length - 1)] || {}).url, controls: true, autoPlay: false, playsInline: true, style: { width: "100%", borderRadius: 6, background: "#000", display: "block" }, onEnded: function () { setVideoIdx(function (x) { return videoClips.length > 1 ? (x + 1) % videoClips.length : x; }); } }),
           videoClips.length > 0 && React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, marginTop: 12 } },
             videoClips.map(function (c, i) {
               return React.createElement("div", { key: i, style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, fontSize: 12.5 } },
@@ -1572,13 +1634,17 @@ function BAMYachtApp() {
                 React.createElement("a", { href: c.url, target: "_blank", rel: "noopener", style: { color: "#c9a84c", textDecoration: "none", whiteSpace: "nowrap" } }, "scarica")
               );
             })
+          ),
+          (videoClips.length >= 2 || (videoClips.length > 0 && !videoBusy)) && React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" } },
+            videoClips.length >= 2 && !mergedUrl && React.createElement("button", { className: "pbtn", onClick: mergeVideos, disabled: merging || videoBusy }, merging ? "Unisco\u2026" : "\u2728 Unisci in un video unico (" + videoClips.length + ")"),
+            !videoBusy && !merging && React.createElement("button", { className: "sbtn", onClick: resetVideoSession }, "Nuova sessione")
           )
         ),
         videoSelMode && archive && archive.length > 0 && React.createElement("div", { style: { position: "sticky", bottom: -1, marginTop: 18, paddingTop: 14, background: "linear-gradient(to top, #0b1020 72%, rgba(11,16,32,0))", display: "flex", flexDirection: "column", gap: 10 } },
           React.createElement("div", { style: { fontSize: 12, color: "#c9a84c", letterSpacing: ".06em" } }, videoSel.length === 0 ? "Nessuna foto selezionata" : (videoSel.length === 1 ? "1 foto selezionata" : videoSel.length + " foto selezionate")),
           React.createElement("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" } },
             React.createElement("button", { className: "sbtn", onClick: function () { setVideoSel([]); }, disabled: !videoSel.length || videoBusy }, "Deseleziona"),
-            React.createElement("button", { className: "pbtn", onClick: function () { const ph = {}; (archive || []).forEach(function (r) { if (r.before_signed) ph[r.id + ":before"] = { label: (r.label || "Ambiente") + " \u00B7 Prima", url: r.before_signed, room_id: r.id, kind: "before" }; if (r.after_signed) ph[r.id + ":after"] = { label: (r.label || "Ambiente") + " \u00B7 Dopo", url: r.after_signed, room_id: r.id, kind: "after" }; }); const items = videoSel.map(function (k) { return ph[k]; }).filter(Boolean); if (items.length) createVideos(items); }, disabled: videoBusy || videoSel.length === 0 }, videoBusy ? "Genero video\u2026" : "\uD83C\uDFAC Crea video (" + videoSel.length + ")")
+            React.createElement("button", { className: "pbtn", onClick: function () { const ph = {}; (archive || []).forEach(function (r) { if (r.before_signed) ph[r.id + ":before"] = { key: r.id + ":before", label: (r.label || "Ambiente") + " \u00B7 Prima", url: r.before_signed, room_id: r.id, kind: "before" }; if (r.after_signed) ph[r.id + ":after"] = { key: r.id + ":after", label: (r.label || "Ambiente") + " \u00B7 Dopo", url: r.after_signed, room_id: r.id, kind: "after" }; }); const items = videoSel.map(function (k) { return ph[k]; }).filter(Boolean); if (items.length) createVideos(items); }, disabled: videoBusy || videoSel.length === 0 }, videoBusy ? "Genero video\u2026" : "\uD83C\uDFAC Crea video (" + videoSel.length + ")")
           )
         ),
         selMode && archive && archive.length > 0 && React.createElement("div", { style: { position: "sticky", bottom: -1, marginTop: 18, paddingTop: 14, background: "linear-gradient(to top, #0b1020 72%, rgba(11,16,32,0))", display: "flex", flexDirection: "column", gap: 10 } },
