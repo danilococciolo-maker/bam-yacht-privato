@@ -82,7 +82,7 @@ export default async function handler(req, res) {
     // 3) filtro: normalizzo ogni clip, poi catena di dissolvenze, poi musica
     const parts = [];
     for (let k = 0; k < files.length; k++) {
-      parts.push("[" + k + ":v]fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease,pad=" + W + ":" + H + ":-1:-1,setsar=1,settb=AVTB[n" + k + "]");
+      parts.push("[" + k + ":v]fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=lanczos,pad=" + W + ":" + H + ":-1:-1,setsar=1,settb=AVTB[n" + k + "]");
     }
     let label = "n0", total = durs[0];
     for (let k = 1; k < files.length; k++) {
