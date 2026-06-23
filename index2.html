@@ -82,7 +82,7 @@ footer{border-top:1px solid rgba(201,168,76,.07);padding:24px 20px;text-align:ce
       showLoginGate();
     }
     supabaseClient.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT' || event === 'SIGNED_IN') location.reload();
+      if (event === 'SIGNED_OUT') { try { var _lr = +sessionStorage.getItem('bam_auth_reload') || 0; if (Date.now() - _lr > 4000) { sessionStorage.setItem('bam_auth_reload', String(Date.now())); location.reload(); } } catch (_) { location.reload(); } }
     });
   })();
 
