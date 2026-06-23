@@ -642,6 +642,7 @@ function BAMYachtApp() {
   const [videoProg, setVideoProg] = useState({ done: 0, total: 0, name: "" });
   const [savedVideos, setSavedVideos] = useState([]);
   const [savedBusy, setSavedBusy] = useState(false);
+  const [dlBusy, setDlBusy] = useState(false);
   const [costPerVideo, setCostPerVideo] = useState("3.00");
   const [videoResume, setVideoResume] = useState(null);
   const videoElRef = useRef(null);
@@ -1465,6 +1466,27 @@ function BAMYachtApp() {
     finally { setSavedBusy(false); }
   }
 
+  async function saveToDevice(url, name) {
+    const fname = name || ("BAM-video-" + Date.now() + ".mp4");
+    setDlBusy(true);
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error("fetch " + resp.status);
+      const blob = await resp.blob();
+      const file = new File([blob], fname, { type: "video/mp4" });
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: "BAM Vision" }); return; }
+        catch (e) { if (e && e.name === "AbortError") return; }
+      }
+      const u = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = u; a.download = fname; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(u); }, 5000);
+    } catch (e) {
+      try { window.open(url, "_blank"); } catch (_) {}
+    } finally { setDlBusy(false); }
+  }
+
   async function crossfadeMerge(urls) {
     const s = await supabaseClient.auth.getSession();
     const sess = s && s.data ? s.data.session : null;
@@ -1488,7 +1510,12 @@ function BAMYachtApp() {
   async function runMerge(urls) {
     try { const cf = await crossfadeMerge(urls); if (cf) return cf; } catch (_) {}
     const url = await mergeClips(urls, token);
-    if (url) { try { await cloudSaveVideo(url, "merged", "Video unico", null, { source_count: urls.length }); } catch (_) {} }
+    if (url) {
+      try {
+        const p = await cloudSaveVideo(url, "merged", "Video unico", null, { source_count: urls.length });
+        if (p) { const sg = await supabaseClient.storage.from(VIDEO_BUCKET).createSignedUrl(p, 3600); if (sg && sg.data && sg.data.signedUrl) return sg.data.signedUrl; }
+      } catch (_) {}
+    }
     return url;
   }
 
@@ -1746,7 +1773,7 @@ function BAMYachtApp() {
           mergedUrl && React.createElement("div", { style: { marginBottom: 16, padding: 12, border: "1px solid rgba(201,168,76,.45)", borderRadius: 6, background: "rgba(201,168,76,.06)" } },
             React.createElement("div", { style: { fontFamily: G, fontSize: 16, color: "#c9a84c", marginBottom: 8 } }, "\u2728 Video unico pronto"),
             React.createElement("video", { key: "merged", src: mergedUrl, controls: true, playsInline: true, style: { width: "100%", borderRadius: 6, background: "#000", display: "block" } }),
-            React.createElement("a", { href: mergedUrl, target: "_blank", rel: "noopener", style: { display: "inline-block", marginTop: 10, color: "#060a14", background: "#c9a84c", padding: "9px 16px", borderRadius: 4, textDecoration: "none", fontSize: 13, fontWeight: 600 } }, "\u2193 Scarica il video unico")
+            React.createElement("button", { onClick: function () { saveToDevice(mergedUrl, "BAM-video-unico.mp4"); }, disabled: dlBusy, style: { display: "inline-block", marginTop: 10, color: "#060a14", background: "#c9a84c", padding: "10px 16px", borderRadius: 4, border: "none", fontSize: 13, fontWeight: 600, cursor: "pointer" } }, dlBusy ? "Preparo\u2026" : "\u2193 Salva sull'iPad")
           ),
           mergeErr && React.createElement("div", { style: { color: "#e08a7a", fontSize: 13, marginBottom: 10, lineHeight: 1.5 } }, mergeErr),
           videoErr && React.createElement("div", { style: { color: "#e08a7a", fontSize: 13, marginBottom: 10, lineHeight: 1.5 } }, videoErr),
@@ -1767,7 +1794,7 @@ function BAMYachtApp() {
               return React.createElement("div", { key: i, style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, fontSize: 12.5 } },
                 React.createElement("span", { onClick: function () { setVideoIdx(i); }, style: { cursor: "pointer", color: i === Math.min(videoIdx, videoClips.length - 1) ? "#c9a84c" : "rgba(232,220,200,.7)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } },
                   (i + 1) + ". " + c.label),
-                !videoBusy && React.createElement("a", { href: c.url, target: "_blank", rel: "noopener", style: { color: "#c9a84c", textDecoration: "none", whiteSpace: "nowrap" } }, "scarica")
+                !videoBusy && React.createElement("button", { onClick: function () { saveToDevice(c.url, "BAM-clip.mp4"); }, disabled: dlBusy, style: { color: "#c9a84c", background: "none", border: "none", whiteSpace: "nowrap", cursor: "pointer", fontSize: 12.5, padding: 0 } }, "salva")
               );
             })
           ),
@@ -1786,7 +1813,7 @@ function BAMYachtApp() {
             savedVideos.map(function (v, i) {
               return React.createElement("div", { key: v.id || i, style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, fontSize: 12.5, paddingBottom: 8, borderBottom: "1px solid rgba(232,220,200,.06)" } },
                 React.createElement("span", { style: { color: v.is_merged ? "#c9a84c" : "rgba(232,220,200,.78)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, (v.is_merged ? "\u2728 " : "") + (v.label || "Video") + (v.is_merged ? " (unico)" : "")),
-                React.createElement("a", { href: v.url, target: "_blank", rel: "noopener", style: { color: "#c9a84c", textDecoration: "none", whiteSpace: "nowrap" } }, "apri / scarica")
+                React.createElement("button", { onClick: function () { saveToDevice(v.url, "BAM-video.mp4"); }, disabled: dlBusy, style: { color: "#c9a84c", background: "none", border: "none", whiteSpace: "nowrap", cursor: "pointer", fontSize: 12.5, padding: 0 } }, "salva")
               );
             })
           ),
