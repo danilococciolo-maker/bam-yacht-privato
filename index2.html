@@ -240,6 +240,7 @@ const N_SAMPLES = 3;
 
 // ====================== MOTORE VIDEO (Veo 3.1 i2v + merge) ======================
 const VEO_ENDPOINT = "/v1/models/google/veo-3.1-fast/predictions";
+const VEO_ENDPOINT_STD = "/v1/models/google/veo-3.1/predictions"; // ultima risorsa, piu affidabile
 const MERGE_MODEL_ENDPOINT = "/v1/models/lucataco/video-merge"; // modello community: serve la version
 const MUSIC_MERGE_MODEL_ENDPOINT = "/v1/models/lucataco/video-audio-merge"; // community: serve la version
 const MUSIC_URL = "https://raw.githubusercontent.com/SoundSafari/CC0-1.0-Music/main/freepd.com/Martini%20Sunset.mp3"; // CC0 / dominio pubblico
@@ -505,35 +506,49 @@ function clearVideoJob() { try { localStorage.removeItem(VIDEO_JOB_KEY); } catch
 // Porta un'immagine ad almeno 1920px sul lato lungo (canvas) e restituisce un data URL JPEG,
 // cosi Veo genera la clip ad alta risoluzione (1080p) e Topaz la porta a 4K vero.
 // Qualsiasi errore (CORS, decodifica) -> ritorna l'URL originale: nessuna regressione.
-function ensureHiResForVeo(imageUrl) {
-  return new Promise(function (resolve) {
-    try {
-      var im = new Image();
-      im.crossOrigin = "anonymous";
-      im.onload = function () {
-        try {
-          var w = im.naturalWidth || im.width, h = im.naturalHeight || im.height;
-          var lng = Math.max(w, h);
-          if (!lng || lng >= 1920) { resolve(imageUrl); return; }
-          var scale = 1920 / lng;
-          var nw = Math.round(w * scale), nh = Math.round(h * scale);
-          var cv = document.createElement("canvas");
-          cv.width = nw; cv.height = nh;
-          var ctx = cv.getContext("2d");
-          ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
-          ctx.drawImage(im, 0, 0, nw, nh);
-          resolve(cv.toDataURL("image/jpeg", 0.95));
-        } catch (_) { resolve(imageUrl); }
-      };
-      im.onerror = function () { resolve(imageUrl); };
-      im.src = imageUrl;
-    } catch (_) { resolve(imageUrl); }
+function loadImageEl(src, useCross) {
+  return new Promise(function (resolve, reject) {
+    var im = new Image();
+    if (useCross) im.crossOrigin = "anonymous";
+    im.onload = function () { resolve(im); };
+    im.onerror = function () { reject(new Error("img")); };
+    im.src = src;
   });
+}
+function coverTo1080(im) {
+  var W = 1920, H = 1080; // formato video fisso 16:9
+  var w = im.naturalWidth || im.width, h = im.naturalHeight || im.height;
+  if (!w || !h) throw new Error("dim");
+  // COVER: riempie tutto il 16:9 ritagliando l'eccesso, centrato. Mai barre nere.
+  var scale = Math.max(W / w, H / h);
+  var dw = w * scale, dh = h * scale, dx = (W - dw) / 2, dy = (H - dh) / 2;
+  var cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  var ctx = cv.getContext("2d");
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(im, dx, dy, dw, dh);
+  return cv.toDataURL("image/jpeg", 0.95);
+}
+async function ensureHiResForVeo(imageUrl) {
+  // 1) Via piu robusta: scarico come blob -> object URL (same-origin: il canvas non si blocca mai).
+  try {
+    const resp = await fetch(imageUrl);
+    if (resp && resp.ok) {
+      const blob = await resp.blob();
+      const obj = URL.createObjectURL(blob);
+      try { const im = await loadImageEl(obj, false); const out = coverTo1080(im); URL.revokeObjectURL(obj); return out; }
+      catch (e) { URL.revokeObjectURL(obj); }
+    }
+  } catch (_) {}
+  // 2) Fallback: Image con crossOrigin.
+  try { const im = await loadImageEl(imageUrl, true); return coverTo1080(im); } catch (_) {}
+  // 3) Ultimissimo fallback (raro): immagine originale, per non perdere la clip.
+  return imageUrl;
 }
 
 // Genera UNA clip Veo da una foto (URL firmato, fetchato lato Replicate).
-async function veoClip(imageUrl, token, shouldStop) {
-  let pred = await replicateCreate(VEO_ENDPOINT, token, { input: { prompt: PROMPT_VEO_MOVE, image: imageUrl, duration: 8, resolution: "1080p" } });
+async function veoClip(imageUrl, token, shouldStop, endpoint) {
+  let pred = await replicateCreate(endpoint || VEO_ENDPOINT, token, { input: { prompt: PROMPT_VEO_MOVE, image: imageUrl, duration: 8, resolution: "1080p" } });
   pred = await replicatePoll(pred, token, 180, shouldStop);
   let out = pred.output;
   if (Array.isArray(out)) out = out[0];
@@ -566,11 +581,26 @@ async function makeRoomVideo(item, token, onLog, shouldStop) {
   if (!src0) throw new Error(name + ": manca l'immagine.");
   // Foto sorgente ad almeno 1920px -> clip Veo a 1080p -> Topaz 4K vero. Fallback: originale.
   const src = await ensureHiResForVeo(src0);
+  const stopped = function () { return typeof shouldStop === "function" && shouldStop(); };
+  async function roundGen(endpoint, n) {
+    const gens = await Promise.all(Array.from({ length: n }, function () {
+      return veoClip(src, token, shouldStop, endpoint).catch(function () { return null; });
+    }));
+    return gens.filter(Boolean);
+  }
+  // ROBUSTEZZA: piu tentativi su piu modelli prima di arrendersi, cosi una foto non si perde mai.
   onLog(name + ": genero " + VIDEO_N_SAMPLES + " in corso\u2026");
-  const gens = await Promise.all(Array.from({ length: VIDEO_N_SAMPLES }, function () {
-    return veoClip(src, token, shouldStop).catch(function () { return null; });
-  }));
-  const good = gens.filter(Boolean);
+  let good = await roundGen(VEO_ENDPOINT, VIDEO_N_SAMPLES);
+  if (!good.length && !stopped()) {
+    onLog(name + ": riprovo\u2026");
+    await new Promise(function (r) { setTimeout(r, 3000); });
+    good = await roundGen(VEO_ENDPOINT, VIDEO_N_SAMPLES);
+  }
+  if (!good.length && !stopped()) {
+    onLog(name + ": ultima risorsa, qualit\u00E0 massima\u2026");
+    await new Promise(function (r) { setTimeout(r, 3000); });
+    good = await roundGen(VEO_ENDPOINT_STD, 1);
+  }
   if (!good.length) throw new Error(name + ": nessuna versione generata.");
   onLog(name + ": " + good.length + "/" + VIDEO_N_SAMPLES + " versioni pronte. Controllo AI (movimento + fedelt\u00E0)\u2026");
   const judged = [];
