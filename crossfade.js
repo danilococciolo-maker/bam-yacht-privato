@@ -37,6 +37,12 @@ function parseDurFps(stderr) {
   return { dur: dur, fps: fps };
 }
 
+function parseCrop(stderr) {
+  const m = stderr.match(/crop=\d+:\d+:\d+:\d+/g);
+  if (!m || !m.length) return null;
+  return m[m.length - 1].slice(5); // ultimo rilevamento, senza "crop="
+}
+
 async function download(url, dest) {
   const r = await fetch(url);
   if (!r.ok) throw new Error("download " + r.status);
@@ -69,20 +75,24 @@ export default async function handler(req, res) {
     const musicFile = path.join(dir, "music.mp3");
     await download(MUSIC_URL, musicFile);
 
-    // 2) durata + fps di ogni clip
+    // 2) durata, fps e bande nere di ogni clip
     const durs = [];
+    const crops = [];
     let fps = 24;
     for (let i = 0; i < files.length; i++) {
       const probe = await run(["-i", files[i]]);
       const d = parseDurFps(probe.err);
       durs.push(d.dur || 8);
       if (i === 0 && d.fps) fps = d.fps;
+      const cd = await run(["-ss", "1", "-i", files[i], "-vf", "cropdetect=24:2:0", "-frames:v", "40", "-f", "null", "-"]);
+      crops.push(parseCrop(cd.err));
     }
 
-    // 3) filtro: normalizzo ogni clip, poi catena di dissolvenze, poi musica
+    // 3) filtro: tolgo le bande nere, ritaglio a 16:9 pieno, scalo, poi dissolvenze + musica
     const parts = [];
     for (let k = 0; k < files.length; k++) {
-      parts.push("[" + k + ":v]fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=lanczos,pad=" + W + ":" + H + ":-1:-1,setsar=1,settb=AVTB[n" + k + "]");
+      const deb = crops[k] ? ("crop=" + crops[k] + ",") : "";
+      parts.push("[" + k + ":v]" + deb + "crop=iw:trunc(min(ih\\,iw*9/16)/2)*2,fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":flags=lanczos,setsar=1,settb=AVTB[n" + k + "]");
     }
     let label = "n0", total = durs[0];
     for (let k = 1; k < files.length; k++) {
