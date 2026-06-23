@@ -941,8 +941,8 @@ function BAMYachtApp() {
           out = await runSampleB(buildPrompt(""), [photo]);
           if (out) referenceRender = out;
         } else if (referenceRender) {
-          var matchClause = " STYLE REFERENCE: the FIRST image is the agreed style for this yacht. Reproduce its EXACT wall colour and finish, floor material and tone, ceiling colour, wood tone, metals, fabrics and lighting temperature. Apply that identical style and materials to the SECOND image, which is a DIFFERENT room of the SAME yacht - keep the SECOND image's own architecture, windows, layout and camera viewpoint. The two rooms must clearly belong to the same yacht.";
-          out = await runSampleB(buildPrompt(matchClause), [referenceRender, photo]);
+          var matchClause = " There are TWO images. EDIT THE FIRST IMAGE ONLY: it is the room to restyle. Keep the FIRST image's exact architecture, walls, ceiling, every window and the view outside, the furniture layout, every piece of furniture in its place, and the camera viewpoint UNCHANGED. The SECOND image is ONLY a colour and material palette from the same yacht: copy from it the wall colour and finish, the floor material and tone, the ceiling colour, the wood tone, the metals, the fabrics and the lighting temperature, and apply them to the FIRST image. Do NOT copy the SECOND image's room shape, its furniture, its layout, its windows or its camera. The output must be the FIRST image's own room, restyled to match the SECOND image's colours and materials.";
+          out = await runSampleB(buildPrompt(matchClause), [photo, referenceRender]);
           if (!out) out = await runSampleB(buildPrompt(""), [photo]);
         } else {
           out = await runSampleB(buildPrompt(""), [photo]);
@@ -2151,7 +2151,7 @@ function BAMYachtApp() {
         React.createElement("div", { className: "sn" }, "01"),
         React.createElement("div", { className: "sl" }, "Carica il Prima"),
         !img ? React.createElement("div", {
-          className: "dz" + (drag ? " ov" : ""),
+          className: "dz" + (drag ? " ov" : ""), style: batchPhotos.length ? { padding: "14px 32px" } : null,
           onClick: () => fileRef.current && fileRef.current.click(),
           onDrop: (e) => { e.preventDefault(); setDrag(false); loadFile(e.dataTransfer.files[0]); },
           onDragOver: (e) => { e.preventDefault(); setDrag(true); },
@@ -2165,7 +2165,21 @@ function BAMYachtApp() {
           React.createElement("button", { onClick: () => { setImg(null); setResult(null); setResultB64(null); setResumeJob(null); clearJob(); }, style: { position: "absolute", top: 10, right: 10, width: 30, height: 30, background: "rgba(8,12,24,.85)", border: "1px solid rgba(201,168,76,.28)", color: "#c9a84c", borderRadius: "50%", cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" } }, "\u00D7"),
           React.createElement("div", { style: { position: "absolute", bottom: 12, left: 12, background: "rgba(8,12,24,.72)", padding: "4px 12px", fontSize: 10, letterSpacing: ".2em", color: "rgba(232,220,200,.55)", textTransform: "uppercase", borderRadius: 2 } }, "Prima")
         ),
-        React.createElement("input", { ref: fileRef, type: "file", accept: "image/*", multiple: true, style: { display: "none" }, onChange: (e) => { var fs = e.target.files; if (fs && fs.length > 1) { loadFilesBatch(fs); } else { setBatchPhotos([]); loadFile(fs && fs[0]); } } })
+        React.createElement("input", { ref: fileRef, type: "file", accept: "image/*", multiple: true, style: { display: "none" }, onChange: (e) => { var fs = e.target.files; if (fs && fs.length > 1) { loadFilesBatch(fs); } else { setBatchPhotos([]); loadFile(fs && fs[0]); } } }),
+        React.createElement("div", { style: { marginBottom: 18 } },
+          batchPhotos.length > 0 && React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 16 } },
+            batchPhotos.map(function (p, i) {
+              return React.createElement("div", { key: i, style: { position: "relative" } },
+                React.createElement("img", { src: p.data, style: { width: 76, height: 56, objectFit: "cover", borderRadius: 3, border: "1px solid rgba(201,168,76,.3)" } }),
+                React.createElement("button", { onClick: function () { setBatchPhotos(batchPhotos.filter(function (_x, k) { return k !== i; })); }, style: { position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "rgba(8,12,24,.92)", border: "1px solid rgba(201,168,76,.45)", color: "#c9a84c", cursor: "pointer", fontSize: 12, lineHeight: "16px", padding: 0 } }, "\u00D7")
+              );
+            })
+          ),
+          batchPhotos.length >= 2 && React.createElement("div", { style: { fontSize: 12.5, color: "rgba(232,220,200,.5)", marginBottom: 12, lineHeight: 1.5 } }, "" + batchPhotos.length + " ambienti dello stesso yacht. Scrivi un comando o scegli uno stile qui sopra: usciranno tutti con lo stesso pavimento, soffitto, luci e arredi."),
+          batchPhotos.length >= 2 && React.createElement("button", { className: "gbtn", onClick: generateBatch, disabled: batchBusy || (!refitText.trim() && !stylePreset) }, batchBusy ? (batchProg ? ("Creo il walkthrough\u2026 ambiente " + batchProg.i + "/" + batchProg.n + " (resta qui)") : "Creo il walkthrough\u2026 (resta qui)") : ("\u2728 Crea walkthrough coerente (" + batchPhotos.length + " foto)")),
+          batchErr && React.createElement("div", { style: { marginTop: 14, background: "rgba(220,80,80,.07)", border: "1px solid rgba(220,80,80,.2)", borderRadius: 3, padding: "12px 18px", color: "#e08080", fontSize: 14, lineHeight: 1.5 } }, batchErr),
+          batchDone && React.createElement("div", { style: { marginTop: 14, background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.3)", borderRadius: 3, padding: "12px 18px", color: "#c9a84c", fontSize: 14, lineHeight: 1.55 } }, "Walkthrough pronto: " + batchDone.okCount + " ambienti su " + batchDone.total + " creati nello stesso stile. Aprilo dall'archivio, seleziona gli ambienti e crea il video.")
+        )
       ),
       React.createElement("div", { className: "div" }),
       React.createElement("div", { style: { marginBottom: 42 } },
@@ -2229,20 +2243,6 @@ function BAMYachtApp() {
         )
       ),
       React.createElement("div", { style: { textAlign: "center", marginBottom: 42 } },
-        React.createElement("div", { style: { marginBottom: 18 } },
-          batchPhotos.length > 0 && React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 16 } },
-            batchPhotos.map(function (p, i) {
-              return React.createElement("div", { key: i, style: { position: "relative" } },
-                React.createElement("img", { src: p.data, style: { width: 76, height: 56, objectFit: "cover", borderRadius: 3, border: "1px solid rgba(201,168,76,.3)" } }),
-                React.createElement("button", { onClick: function () { setBatchPhotos(batchPhotos.filter(function (_x, k) { return k !== i; })); }, style: { position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "rgba(8,12,24,.92)", border: "1px solid rgba(201,168,76,.45)", color: "#c9a84c", cursor: "pointer", fontSize: 12, lineHeight: "16px", padding: 0 } }, "\u00D7")
-              );
-            })
-          ),
-          batchPhotos.length >= 2 && React.createElement("div", { style: { fontSize: 12.5, color: "rgba(232,220,200,.5)", marginBottom: 12, lineHeight: 1.5 } }, "" + batchPhotos.length + " ambienti dello stesso yacht. Scrivi un comando o scegli uno stile qui sopra: usciranno tutti con lo stesso pavimento, soffitto, luci e arredi."),
-          batchPhotos.length >= 2 && React.createElement("button", { className: "gbtn", onClick: generateBatch, disabled: batchBusy || (!refitText.trim() && !stylePreset) }, batchBusy ? (batchProg ? ("Creo il walkthrough\u2026 ambiente " + batchProg.i + "/" + batchProg.n + " (resta qui)") : "Creo il walkthrough\u2026 (resta qui)") : ("\u2728 Crea walkthrough coerente (" + batchPhotos.length + " foto)")),
-          batchErr && React.createElement("div", { style: { marginTop: 14, background: "rgba(220,80,80,.07)", border: "1px solid rgba(220,80,80,.2)", borderRadius: 3, padding: "12px 18px", color: "#e08080", fontSize: 14, lineHeight: 1.5 } }, batchErr),
-          batchDone && React.createElement("div", { style: { marginTop: 14, background: "rgba(201,168,76,.08)", border: "1px solid rgba(201,168,76,.3)", borderRadius: 3, padding: "12px 18px", color: "#c9a84c", fontSize: 14, lineHeight: 1.55 } }, "Walkthrough pronto: " + batchDone.okCount + " ambienti su " + batchDone.total + " creati nello stesso stile. Aprilo dall'archivio, seleziona gli ambienti e crea il video.")
-        ),
         (!batchPhotos.length) && React.createElement("button", { className: "gbtn", onClick: generate, disabled: !img || busy || !refitText.trim() }, busy ? "Generazione in corso…" : "Genera Concept Refit"),
         err && React.createElement("div", { style: { marginTop: 14, background: "rgba(220,80,80,.07)", border: "1px solid rgba(220,80,80,.2)", borderRadius: 3, padding: "12px 18px", color: "#e08080", fontSize: 14, lineHeight: 1.5 } }, err)
       ),
