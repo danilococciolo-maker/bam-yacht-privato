@@ -239,12 +239,12 @@ const JUDGE_ENDPOINT = "/v1/models/google/gemini-3-flash/predictions";
 const N_SAMPLES = 3;
 
 // ====================== MOTORE VIDEO (Veo 3.1 i2v + merge) ======================
-const VEO_ENDPOINT = "/v1/models/google/veo-3.1/predictions";
+const VEO_ENDPOINT = "/v1/models/google/veo-3.1-fast/predictions";
 const MERGE_MODEL_ENDPOINT = "/v1/models/lucataco/video-merge"; // modello community: serve la version
 const MUSIC_MERGE_MODEL_ENDPOINT = "/v1/models/lucataco/video-audio-merge"; // community: serve la version
 const MUSIC_URL = "https://raw.githubusercontent.com/SoundSafari/CC0-1.0-Music/main/freepd.com/Martini%20Sunset.mp3"; // CC0 / dominio pubblico
 const TOPAZ_VIDEO_ENDPOINT = "/v1/models/topazlabs/video-upscale/predictions"; // upscale AI 4K (ufficiale, temporal)
-const VIDEO_N_SAMPLES = 3; // versioni Veo per foto, poi scelgo la migliore
+const VIDEO_N_SAMPLES = 2; // versioni Veo per foto, poi scelgo la migliore
 const VIDEO_JOB_KEY = "bam_video_job_v1"; // salvataggio locale per ripresa/riuso
 const SAVE_VIDEO_ENDPOINT = "/api/save-video"; // copia video su Supabase (permanente)
 const CROSSFADE_ENDPOINT = "/api/crossfade"; // unione con dissolvenza + musica (ffmpeg)
@@ -501,6 +501,35 @@ function saveVideoJob(job) { try { localStorage.setItem(VIDEO_JOB_KEY, JSON.stri
 function loadVideoJob() { try { const s = localStorage.getItem(VIDEO_JOB_KEY); return s ? JSON.parse(s) : null; } catch (_) { return null; } }
 function clearVideoJob() { try { localStorage.removeItem(VIDEO_JOB_KEY); } catch (_) {} }
 
+// Porta un'immagine ad almeno 1920px sul lato lungo (canvas) e restituisce un data URL JPEG,
+// cosi Veo genera la clip ad alta risoluzione (1080p) e Topaz la porta a 4K vero.
+// Qualsiasi errore (CORS, decodifica) -> ritorna l'URL originale: nessuna regressione.
+function ensureHiResForVeo(imageUrl) {
+  return new Promise(function (resolve) {
+    try {
+      var im = new Image();
+      im.crossOrigin = "anonymous";
+      im.onload = function () {
+        try {
+          var w = im.naturalWidth || im.width, h = im.naturalHeight || im.height;
+          var lng = Math.max(w, h);
+          if (!lng || lng >= 1920) { resolve(imageUrl); return; }
+          var scale = 1920 / lng;
+          var nw = Math.round(w * scale), nh = Math.round(h * scale);
+          var cv = document.createElement("canvas");
+          cv.width = nw; cv.height = nh;
+          var ctx = cv.getContext("2d");
+          ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(im, 0, 0, nw, nh);
+          resolve(cv.toDataURL("image/jpeg", 0.95));
+        } catch (_) { resolve(imageUrl); }
+      };
+      im.onerror = function () { resolve(imageUrl); };
+      im.src = imageUrl;
+    } catch (_) { resolve(imageUrl); }
+  });
+}
+
 // Genera UNA clip Veo da una foto (URL firmato, fetchato lato Replicate).
 async function veoClip(imageUrl, token) {
   let pred = await replicateCreate(VEO_ENDPOINT, token, { input: { prompt: PROMPT_VEO_MOVE, image: imageUrl, duration: 8, resolution: "1080p" } });
@@ -531,9 +560,11 @@ async function judgeVideo(videoUrl, refImageUrl, token) {
 
 // Genera VIDEO_N_SAMPLES versioni per UNA foto, le giudica, ritorna la migliore.
 async function makeRoomVideo(item, token, onLog) {
-  const src = item.url || item.after_signed;
+  const src0 = item.url || item.after_signed;
   const name = item.label || "Foto";
-  if (!src) throw new Error(name + ": manca l'immagine.");
+  if (!src0) throw new Error(name + ": manca l'immagine.");
+  // Foto sorgente ad almeno 1920px -> clip Veo a 1080p -> Topaz 4K vero. Fallback: originale.
+  const src = await ensureHiResForVeo(src0);
   onLog(name + ": genero " + VIDEO_N_SAMPLES + " in corso\u2026");
   const gens = await Promise.all(Array.from({ length: VIDEO_N_SAMPLES }, function () {
     return veoClip(src, token).catch(function () { return null; });
@@ -658,7 +689,8 @@ function BAMYachtApp() {
   const [savedVideos, setSavedVideos] = useState([]);
   const [savedBusy, setSavedBusy] = useState(false);
   const [dlBusy, setDlBusy] = useState(false);
-  const [costPerVideo, setCostPerVideo] = useState("3.00");
+  const [costPerVideo, setCostPerVideo] = useState("5.50");
+  const [costPerMerge, setCostPerMerge] = useState("5.00");
   const [videoResume, setVideoResume] = useState(null);
   const videoElRef = useRef(null);
   useEffect(function () {
@@ -2013,7 +2045,7 @@ function BAMYachtApp() {
           const fdate = function (s) { return s ? new Date(s).toLocaleDateString("it-IT") : "\u2014"; };
           return React.createElement("div", null,
             React.createElement("div", { style: { display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 22 } },
-              card("Broker", t.brokers || 0), card("Dossier", t.dossiers || 0), card("Render", t.renders || 0), card("Video", t.videos || 0), card("Link", t.shares || 0)
+              card("Broker", t.brokers || 0), card("Dossier", t.dossiers || 0), card("Render", t.renders || 0), card("Video", t.video_clips || 0), card("Link", t.shares || 0)
             ),
             React.createElement("div", { style: { background: "rgba(201,168,76,.06)", border: "1px solid rgba(201,168,76,.2)", borderRadius: 4, padding: "16px 18px", marginBottom: 26, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" } },
               React.createElement("div", null,
@@ -2028,13 +2060,15 @@ function BAMYachtApp() {
               React.createElement("div", { style: { flexBasis: "100%", height: 1, background: "rgba(201,168,76,.14)", margin: "6px 0" } }),
               React.createElement("div", null,
                 React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.45)", letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 4 } }, "Costo video stimato"),
-                React.createElement("div", { style: { fontFamily: G, fontSize: 26, color: "#c9a84c" } }, "\u20AC " + ((t.videos || 0) * (parseFloat((costPerVideo || "0").replace(",", ".")) || 0)).toFixed(2))
+                React.createElement("div", { style: { fontFamily: G, fontSize: 26, color: "#c9a84c" } }, "\u20AC " + (((t.video_clips || 0) * (parseFloat((costPerVideo || "0").replace(",", ".")) || 0)) + ((t.video_merges || 0) * (parseFloat((costPerMerge || "0").replace(",", ".")) || 0))).toFixed(2))
               ),
-              React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
-                React.createElement("span", { style: { fontSize: 12, color: "rgba(232,220,200,.5)" } }, "\u20AC / video"),
-                React.createElement("input", { className: "inp", type: "text", inputMode: "decimal", value: costPerVideo, onChange: (e) => setCostPerVideo(e.target.value), style: { width: 90, fontSize: 13 } })
+              React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" } },
+                React.createElement("span", { style: { fontSize: 12, color: "rgba(232,220,200,.5)" } }, "\u20AC / ambiente"),
+                React.createElement("input", { className: "inp", type: "text", inputMode: "decimal", value: costPerVideo, onChange: (e) => setCostPerVideo(e.target.value), style: { width: 78, fontSize: 13 } }),
+                React.createElement("span", { style: { fontSize: 12, color: "rgba(232,220,200,.5)" } }, "\u20AC / montaggio 4K"),
+                React.createElement("input", { className: "inp", type: "text", inputMode: "decimal", value: costPerMerge, onChange: (e) => setCostPerMerge(e.target.value), style: { width: 78, fontSize: 13 } })
               ),
-              React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.35)", flexBasis: "100%", lineHeight: 1.5 } }, "Stima: numero di video generati \u00D7 costo medio per clip video. Regola col valore reale.")
+              React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.35)", flexBasis: "100%", lineHeight: 1.5 } }, "Stima: ambienti animati \u00D7 costo (2 versioni Veo Fast) + montaggi 4K \u00D7 costo upscale. Regola coi valori reali di Replicate.")
             ),
             React.createElement("div", { style: { fontFamily: G, fontSize: 18, color: "#e8dcc8", margin: "0 0 12px", letterSpacing: ".03em" } }, "Broker"),
             React.createElement("div", { style: { overflowX: "auto", marginBottom: 28 } },
