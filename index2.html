@@ -864,29 +864,34 @@ function BAMYachtApp() {
 
 
   const loadFilesBatch = useCallback(function (fileList) {
-    var files = Array.prototype.slice.call(fileList || []).filter(function (f) { return f && f.type && f.type.indexOf("image/") === 0; }).slice(0, 10);
+    var files = Array.prototype.slice.call(fileList || []).filter(function (f) { return f && (!f.type || f.type.indexOf("image/") === 0); }).slice(0, 10);
     if (!files.length) return;
     setImg(null); setResult(null); setResultB64(null); setErr(null); setBatchDone(null); setBatchErr(null);
-    var out = []; var pending = files.length;
-    files.forEach(function (file, idx) {
-      var r = new FileReader();
-      r.onload = function (e) {
-        var dataUrl = e.target.result; var tmp = new Image();
-        tmp.onload = function () {
-          try {
-            var maxDim = 2048; var w = tmp.width, h = tmp.height;
-            if (w > maxDim || h > maxDim) { var ratio = maxDim / Math.max(w, h); w = Math.round(w * ratio); h = Math.round(h * ratio); }
-            var c = document.createElement("canvas"); c.width = w; c.height = h;
-            var ctx = c.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h); ctx.drawImage(tmp, 0, 0, w, h);
-            out[idx] = { data: c.toDataURL("image/jpeg", 0.95), aspect: w + "/" + h };
-          } catch (_) { out[idx] = { data: dataUrl, aspect: "16/9" }; }
-          pending--; if (pending === 0) setBatchPhotos(out.filter(Boolean));
+    Promise.all(files.map(function (file) {
+      return new Promise(function (resolve) {
+        var r = new FileReader();
+        r.onload = function (e) {
+          var dataUrl = e.target.result; var done = false;
+          var finish = function (d, a) { if (done) return; done = true; resolve({ data: d, aspect: a || "16/9" }); };
+          var tmp = new Image();
+          var to = setTimeout(function () { finish(dataUrl, "16/9"); }, 5000);
+          tmp.onload = function () {
+            clearTimeout(to);
+            try {
+              var maxDim = 2048; var w = tmp.width, h = tmp.height;
+              if (w > maxDim || h > maxDim) { var ratio = maxDim / Math.max(w, h); w = Math.round(w * ratio); h = Math.round(h * ratio); }
+              var c = document.createElement("canvas"); c.width = w; c.height = h;
+              var ctx = c.getContext("2d"); ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h); ctx.drawImage(tmp, 0, 0, w, h);
+              finish(c.toDataURL("image/jpeg", 0.92), w + "/" + h);
+            } catch (_) { finish(dataUrl, "16/9"); }
+          };
+          tmp.onerror = function () { clearTimeout(to); finish(dataUrl, "16/9"); };
+          tmp.src = dataUrl;
         };
-        tmp.onerror = function () { out[idx] = { data: dataUrl, aspect: "16/9" }; pending--; if (pending === 0) setBatchPhotos(out.filter(Boolean)); };
-        tmp.src = dataUrl;
-      };
-      r.readAsDataURL(file);
-    });
+        r.onerror = function () { resolve(null); };
+        r.readAsDataURL(file);
+      });
+    })).then(function (arr) { setBatchPhotos(arr.filter(Boolean)); });
   }, []);
 
   async function generateBatch() {
