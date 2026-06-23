@@ -933,20 +933,14 @@ function BAMYachtApp() {
       var titolo = (yacht.modello || yacht.cantiere) ? [yacht.cantiere, yacht.modello].filter(Boolean).join(" ") : ("Walkthrough " + new Date().toLocaleDateString("it-IT"));
       var insD = await supabaseClient.from("dossiers").insert({ id: dossierId, broker_id: uid, title: titolo, yacht_name: titolo, yacht_builder: yacht.cantiere || null, yacht_model: yacht.modello || null, status: "ready", metadata: { anno: yacht.anno || null, walkthrough: true, style_label: label } });
       if (insD.error) throw insD.error;
-      var referenceRender = null; var okCount = 0;
+      var okCount = 0;
       for (var i = 0; i < batchPhotos.length; i++) {
         setBatchProg({ i: i + 1, n: batchPhotos.length });
-        var photo = batchPhotos[i].data; var out = null;
-        if (i === 0) {
-          out = await runSampleB(buildPrompt(""), [photo]);
-          if (out) referenceRender = out;
-        } else if (referenceRender) {
-          var matchClause = " There are TWO images. EDIT THE FIRST IMAGE ONLY: it is the room to restyle. Keep the FIRST image's exact architecture, walls, ceiling, every window and the view outside, the furniture layout, every piece of furniture in its place, and the camera viewpoint UNCHANGED. The SECOND image is ONLY a colour and material palette from the same yacht: copy from it the wall colour and finish, the floor material and tone, the ceiling colour, the wood tone, the metals, the fabrics and the lighting temperature, and apply them to the FIRST image. Do NOT copy the SECOND image's room shape, its furniture, its layout, its windows or its camera. The output must be the FIRST image's own room, restyled to match the SECOND image's colours and materials.";
-          out = await runSampleB(buildPrompt(matchClause), [photo, referenceRender]);
-          if (!out) out = await runSampleB(buildPrompt(""), [photo]);
-        } else {
-          out = await runSampleB(buildPrompt(""), [photo]);
-        }
+        var photo = batchPhotos[i].data;
+        // Ogni foto arredata DA SOLA con la stessa scheda-stile congelata (come il render singolo).
+        // Niente foto-campione passata al motore: cosi ogni ambiente tiene la SUA geometria
+        // e la coerenza arriva dal testo identico applicato a tutte.
+        var out = await runSampleB(buildPrompt(""), [photo]);
         if (!out) continue;
         try {
           var roomId = uuidv4(); var prefix = uid + "/" + dossierId + "/" + roomId + "/";
