@@ -318,9 +318,10 @@ async function replicateCreate(endpoint, token, payload) {
   }
 }
 
-async function replicatePoll(prediction, token, maxAttempts) {
+async function replicatePoll(prediction, token, maxAttempts, shouldStop) {
   let attempts = 0;
   while ((prediction.status === "starting" || prediction.status === "processing") && attempts < maxAttempts) {
+    if (typeof shouldStop === "function" && shouldStop()) { const _e = new Error("Interrotto"); _e.stopped = true; throw _e; }
     await new Promise(r => setTimeout(r, 2000));
     const pollPath = new URL(prediction.urls.get).pathname;
     const pollRes = await fetch(pollPath, { headers: { "Authorization": "Token " + token } });
@@ -531,9 +532,9 @@ function ensureHiResForVeo(imageUrl) {
 }
 
 // Genera UNA clip Veo da una foto (URL firmato, fetchato lato Replicate).
-async function veoClip(imageUrl, token) {
+async function veoClip(imageUrl, token, shouldStop) {
   let pred = await replicateCreate(VEO_ENDPOINT, token, { input: { prompt: PROMPT_VEO_MOVE, image: imageUrl, duration: 8, resolution: "1080p" } });
-  pred = await replicatePoll(pred, token, 180);
+  pred = await replicatePoll(pred, token, 180, shouldStop);
   let out = pred.output;
   if (Array.isArray(out)) out = out[0];
   return out ? String(out) : null;
@@ -559,7 +560,7 @@ async function judgeVideo(videoUrl, refImageUrl, token) {
 }
 
 // Genera VIDEO_N_SAMPLES versioni per UNA foto, le giudica, ritorna la migliore.
-async function makeRoomVideo(item, token, onLog) {
+async function makeRoomVideo(item, token, onLog, shouldStop) {
   const src0 = item.url || item.after_signed;
   const name = item.label || "Foto";
   if (!src0) throw new Error(name + ": manca l'immagine.");
@@ -567,7 +568,7 @@ async function makeRoomVideo(item, token, onLog) {
   const src = await ensureHiResForVeo(src0);
   onLog(name + ": genero " + VIDEO_N_SAMPLES + " in corso\u2026");
   const gens = await Promise.all(Array.from({ length: VIDEO_N_SAMPLES }, function () {
-    return veoClip(src, token).catch(function () { return null; });
+    return veoClip(src, token, shouldStop).catch(function () { return null; });
   }));
   const good = gens.filter(Boolean);
   if (!good.length) throw new Error(name + ": nessuna versione generata.");
@@ -686,6 +687,8 @@ function BAMYachtApp() {
   const [merging, setMerging] = useState(false);
   const [mergeErr, setMergeErr] = useState(null);
   const [videoProg, setVideoProg] = useState({ done: 0, total: 0, name: "" });
+  const videoStopRef = useRef(false);
+  const [videoStopReq, setVideoStopReq] = useState(false);
   const [savedVideos, setSavedVideos] = useState([]);
   const [savedBusy, setSavedBusy] = useState(false);
   const [dlBusy, setDlBusy] = useState(false);
@@ -1700,25 +1703,39 @@ function BAMYachtApp() {
     if (!token) { setVideoErr("Manca il token Replicate. Aprilo in Impostazioni."); return; }
     if (!items || !items.length) return;
     setVideoErr(null); setVideoBusy(true); setVideoLog([]); setVideoIdx(0); setMergedUrl(null); setMergeErr(null); setVideoProg({ done: 0, total: items.length, name: "" });
+    videoStopRef.current = false; setVideoStopReq(false);
     const prior = (loadVideoJob() || {}).done || [];
     const priorByKey = {}; prior.forEach(function (c) { if (c && c.key) priorByKey[c.key] = c; });
     const logArr = [];
     const push = function (s) { logArr.push(s); setVideoLog(logArr.slice()); };
     const meta = items.map(function (x) { return { key: x.key, label: x.label }; });
     const done = [];
+    const failed = [];
     setVideoClips([]);
     saveVideoJob({ ts: Date.now(), items: meta, done: [], merged: null });
     try {
       let uid = null;
       try { const au = await supabaseClient.auth.getUser(); uid = au && au.data && au.data.user ? au.data.user.id : null; } catch (_) {}
       for (let i = 0; i < items.length; i++) {
+        if (videoStopRef.current) { push("\u23F9 Interrotto. Le clip gi\u00E0 pronte restano salvate; ripremi \u00ABCrea video\u00BB per riprendere da dove eri."); break; }
         setVideoProg({ done: i, total: items.length, name: items[i].label || "" });
         let clip;
         if (items[i].key && priorByKey[items[i].key]) {
           clip = priorByKey[items[i].key];
           push("\u21BB " + (clip.label || "Foto") + ": riuso la clip gi\u00E0 pronta (nessun costo).");
         } else {
-          clip = await makeRoomVideo(items[i], token, push);
+          let made = null;
+          for (let attempt = 0; attempt < 2 && !made && !videoStopRef.current; attempt++) {
+            try { made = await makeRoomVideo(items[i], token, push, function () { return videoStopRef.current; }); }
+            catch (errRoom) { if (attempt === 0 && !videoStopRef.current) push("\u21BB " + (items[i].label || ("Ambiente " + (i + 1))) + ": riprovo una volta\u2026"); }
+          }
+          if (videoStopRef.current) { push("\u23F9 Interrotto. Le clip gi\u00E0 pronte restano salvate; ripremi \u00ABCrea video\u00BB per riprendere da dove eri."); break; }
+          if (!made) {
+            push("\u26A0 " + (items[i].label || ("Ambiente " + (i + 1))) + ": saltato (nessuna versione riuscita). Vado avanti.");
+            failed.push(items[i].label || ("Ambiente " + (i + 1)));
+            continue;
+          }
+          clip = made;
           clip.key = items[i].key || null;
           try { await cloudSaveVideo(clip.url, clip.kind || "after", clip.label, clip.room_id, { move_score: clip.move, fidelity_score: clip.fid, samples: VIDEO_N_SAMPLES }); } catch (_) {}
         }
@@ -1727,11 +1744,15 @@ function BAMYachtApp() {
         saveVideoJob({ ts: Date.now(), items: meta, done: done, merged: null });
       }
       setVideoProg({ done: items.length, total: items.length, name: "" });
-      push("\u2014 Fatto: " + done.length + (done.length === 1 ? " clip pronta." : " clip pronte.") + (done.length >= 2 ? " Ora puoi unirle in un video unico con musica." : ""));
+      let doneMsg = "\u2014 Fatto: " + done.length + (done.length === 1 ? " clip pronta." : " clip pronte.");
+      if (failed.length) doneMsg += " Saltati: " + failed.join(", ") + ". Ripremi \u00ABCrea video\u00BB per ritentare solo quelli (le clip gi\u00E0 pronte non si ripagano).";
+      else if (done.length >= 2) doneMsg += " Ora puoi unirle in un video unico con musica.";
+      push(doneMsg);
     } catch (e) {
       setVideoErr(e && e.message ? e.message : String(e));
     } finally {
       setVideoBusy(false);
+      setVideoStopReq(false);
     }
   }
 
@@ -1948,7 +1969,8 @@ function BAMYachtApp() {
             React.createElement("div", { style: { height: 6, borderRadius: 3, background: "rgba(232,220,200,.12)", overflow: "hidden" } },
               React.createElement("div", { style: { height: "100%", width: (videoProg.total ? Math.round(videoProg.done / videoProg.total * 100) : 0) + "%", background: "#c9a84c", transition: "width .5s ease" } })
             ),
-            videoProg.total > 0 && React.createElement("div", { style: { fontSize: 12, color: "rgba(232,220,200,.5)", marginTop: 6 } }, "Foto " + Math.min(videoProg.done + 1, videoProg.total) + " di " + videoProg.total + (videoProg.name ? " \u00B7 " + videoProg.name : ""))
+            videoProg.total > 0 && React.createElement("div", { style: { fontSize: 12, color: "rgba(232,220,200,.5)", marginTop: 6 } }, "Foto " + Math.min(videoProg.done + 1, videoProg.total) + " di " + videoProg.total + (videoProg.name ? " \u00B7 " + videoProg.name : "")),
+            React.createElement("button", { onClick: function () { videoStopRef.current = true; setVideoStopReq(true); }, disabled: videoStopReq, style: { marginTop: 12, color: "#e08a7a", background: "none", border: "1px solid rgba(224,138,122,.5)", borderRadius: 4, padding: "7px 14px", fontSize: 12.5, cursor: videoStopReq ? "default" : "pointer" } }, videoStopReq ? "Interruzione\u2026 (finisco l'ambiente in corso)" : "\u23F9 Interrompi")
           ),
           videoClips.length > 0 && React.createElement("div", { style: { fontSize: 12, color: "rgba(232,220,200,.45)", marginBottom: 6 } }, "Le singole clip:"),
           videoClips.length > 0 && React.createElement("video", { ref: videoElRef, key: videoIdx, src: (videoClips[Math.min(videoIdx, videoClips.length - 1)] || {}).url, controls: true, autoPlay: false, playsInline: true, style: { width: "100%", borderRadius: 6, background: "#000", display: "block" }, onEnded: function () { setVideoIdx(function (x) { return videoClips.length > 1 ? (x + 1) % videoClips.length : x; }); } }),
