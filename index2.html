@@ -237,6 +237,8 @@ const EDIT_ENDPOINT = "/v1/models/google/nano-banana-pro/predictions";
 const EDIT_FALLBACK_ENDPOINT = "/v1/models/google/nano-banana/predictions";
 const JUDGE_ENDPOINT = "/v1/models/google/gemini-3-flash/predictions";
 const N_SAMPLES = 3;
+const NANO_POLISH = "You are given an already-restyled photo of THIS exact yacht interior. Your ONLY job is to refine and beautify it to magazine quality: enrich the materials and textures, perfect the fabrics, wood and metal finishes, improve the realism of the lighting, reflections and shadows, and add fine photographic detail. ABSOLUTE CONSTRAINTS - do NOT redesign or rebuild the room: keep the EXACT same room geometry, size and proportions, the EXACT same walls, ceiling and floor, EVERY window and porthole in the same position and shape with the same outside view, the EXACT same camera viewpoint, perspective and framing, and the EXACT same furniture layout and pieces in the same positions as in this image. Do NOT enlarge or stretch the room, do NOT add a dining table or extra furniture that is not already here, do NOT move or replace windows, do NOT change the floor plan. Only improve quality and finish on top of what is already present. Photorealistic, ultra detailed, professional architectural photography.";
+
 
 // ====================== MOTORE VIDEO (Veo 3.1 i2v + merge) ======================
 const VEO_ENDPOINT = "/v1/models/google/veo-3.1-fast/predictions";
@@ -988,8 +990,23 @@ function BAMYachtApp() {
         p = await replicatePoll(p, token, 90);
         return Array.isArray(p.output) ? p.output[0] : p.output;
       }
-      function runSampleB(prompt, imgs) {
+      // Flux Kontext Max per il walkthrough: input_image singolare (prima foto della lista).
+      async function runFluxB(prompt, imgs) {
+        var base = Array.isArray(imgs) ? imgs[0] : imgs;
+        var p = await replicateCreate(MODEL_ENDPOINT, token, { input: { prompt: prompt, input_image: base, aspect_ratio: "match_input_image", output_format: "jpg" } });
+        p = await replicatePoll(p, token, 90);
+        return Array.isArray(p.output) ? p.output[0] : p.output;
+      }
+      function runNanoB(prompt, imgs) {
         return runEditB(EDIT_ENDPOINT, prompt, imgs).catch(function () { return runEditB(EDIT_FALLBACK_ENDPOINT, prompt, imgs); }).catch(function () { return null; });
+      }
+      // PIPELINE A DUE PASSAGGI (walkthrough): 1) Flux Kontext Max blocca la geometria; 2) nano-banana rifinisce sopra.
+      async function runSampleB(prompt, imgs) {
+        var fluxOut = null;
+        try { fluxOut = await runFluxB(prompt, imgs); } catch (_) { fluxOut = null; }
+        if (!fluxOut) return await runNanoB(prompt, imgs);
+        var polished = await runNanoB(NANO_POLISH, [fluxOut]);
+        return polished || fluxOut;
       }
       var sess = await supabaseClient.auth.getSession();
       var uid = sess && sess.data && sess.data.session && sess.data.session.user && sess.data.session.user.id;
@@ -1130,11 +1147,30 @@ function BAMYachtApp() {
         p = await replicatePoll(p, token, 90);
         return Array.isArray(p.output) ? p.output[0] : p.output;
       }
-      // una proposta = prova il modello principale, poi il fallback, poi null.
-      function runSample(prompt, baseImage) {
+      // Flux Kontext Max: parametri DIVERSI da nano-banana.
+      // Campo immagine = input_image (singolare). Flux lavora sui pixel veri = blocca la geometria.
+      async function runFlux(prompt, baseImage) {
+        let p = await replicateCreate(MODEL_ENDPOINT, token, { input: { prompt: prompt, input_image: baseImage, aspect_ratio: "match_input_image", output_format: "jpg" } });
+        p = await replicatePoll(p, token, 90);
+        return Array.isArray(p.output) ? p.output[0] : p.output;
+      }
+      // Solo nano-banana (rifinitura/fallback), prova principale + fallback.
+      function runNano(prompt, baseImage) {
         return runEdit(EDIT_ENDPOINT, prompt, baseImage)
           .catch(() => runEdit(EDIT_FALLBACK_ENDPOINT, prompt, baseImage))
           .catch(() => null);
+      }
+      // PIPELINE A DUE PASSAGGI per una proposta:
+      // 1) Flux Kontext Max applica lo stile/refit BLOCCANDO la geometria sulla foto vera;
+      // 2) nano-banana rifinisce SOPRA il risultato di Flux (materiali, luce) senza ridisegnare la stanza.
+      async function runSample(prompt, baseImage) {
+        let fluxOut = null;
+        try { fluxOut = await runFlux(prompt, baseImage); } catch (_) { fluxOut = null; }
+        // Se Flux non risponde, ripiego: nano-banana direttamente sulla foto originale.
+        if (!fluxOut) return await runNano(prompt, baseImage);
+        // Passo 2: nano-banana abbellisce il render di Flux, vincolato a NON cambiare la stanza.
+        const polished = await runNano(NANO_POLISH, fluxOut);
+        return polished || fluxOut; // se la rifinitura fallisce, resta il render di Flux (geometria ok)
       }
 
       // Schema CHIARO richiesto su parete/intero ambiente? Allora conviene un passaggio
