@@ -1896,6 +1896,14 @@ function BAMYachtApp() {
           });
         });
       });
+      const labelCount = {};
+      flat.forEach(function (x) { labelCount[x.label] = (labelCount[x.label] || 0) + 1; });
+      flat.forEach(function (x) {
+        if (x.label && labelCount[x.label] > 1 && x.created_at) {
+          var t = new Date(x.created_at);
+          x.dispLabel = x.label + " \u00B7 " + ("0" + t.getHours()).slice(-2) + ":" + ("0" + t.getMinutes()).slice(-2);
+        } else { x.dispLabel = x.label; }
+      });
       setArchive(flat);
     } catch (e) {
       setArchiveErr(e && e.message ? e.message : String(e));
@@ -2009,14 +2017,14 @@ function BAMYachtApp() {
                     React.createElement("img", { src: r.after_signed, alt: r.label, style: { width: "100%", height: 132, objectFit: "cover", display: "block", background: "#0b1020" } }),
                     selMode && React.createElement("div", { style: { position: "absolute", top: 8, right: 8, width: 27, height: 27, borderRadius: "50%", background: sel ? "#c9a84c" : "rgba(8,12,24,.62)", border: "1.5px solid " + (sel ? "#c9a84c" : "rgba(232,220,200,.55)"), color: "#060a14", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700 } }, sel ? "\u2713" : ""),
                     React.createElement("div", { style: { padding: "10px 12px" } },
-                      React.createElement("div", { style: { fontFamily: G, fontSize: 16, color: "#e8dcc8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, r.label || "Ambiente"),
+                      React.createElement("div", { style: { fontFamily: G, fontSize: 16, color: "#e8dcc8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, r.dispLabel || r.label || "Ambiente"),
                       React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.4)", marginTop: 3, letterSpacing: ".04em" } }, sub)
                     )
                   )
                 : React.createElement("div", null,
                     React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: "1px solid rgba(201,168,76,.12)", flexWrap: "wrap" } },
                       React.createElement("div", null,
-                        React.createElement("div", { style: { fontFamily: G, fontSize: 18, color: "#e8dcc8" } }, r.label || "Ambiente"),
+                        React.createElement("div", { style: { fontFamily: G, fontSize: 18, color: "#e8dcc8" } }, r.dispLabel || r.label || "Ambiente"),
                         React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.4)", marginTop: 2, letterSpacing: ".04em" } }, sub)
                       ),
                       React.createElement("div", { style: { display: "flex", gap: 8 } },
@@ -2044,8 +2052,8 @@ function BAMYachtApp() {
         !archiveBusy && videoSelMode && archive && archive.length > 0 && (function () {
           const photos = [];
           archive.forEach(function (r) {
-            if (r.before_signed) photos.push({ key: r.id + ":before", label: (r.label || "Ambiente"), kindLabel: "Prima", url: r.before_signed, room_id: r.id, kind: "before" });
-            if (r.after_signed) photos.push({ key: r.id + ":after", label: (r.label || "Ambiente"), kindLabel: "Dopo", url: r.after_signed, room_id: r.id, kind: "after" });
+            if (r.before_signed) photos.push({ key: r.id + ":before", label: (r.dispLabel || r.label || "Ambiente"), kindLabel: "Prima", url: r.before_signed, room_id: r.id, kind: "before" });
+            if (r.after_signed) photos.push({ key: r.id + ":after", label: (r.dispLabel || r.label || "Ambiente"), kindLabel: "Dopo", url: r.after_signed, room_id: r.id, kind: "after" });
           });
           return React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 12 } },
             photos.map(function (p) {
@@ -2119,7 +2127,7 @@ function BAMYachtApp() {
           React.createElement("div", { style: { fontSize: 12, color: "#c9a84c", letterSpacing: ".06em" } }, videoSel.length === 0 ? "Nessuna foto selezionata" : (videoSel.length === 1 ? "1 foto selezionata" : videoSel.length + " foto selezionate")),
           React.createElement("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" } },
             React.createElement("button", { className: "sbtn", onClick: function () { setVideoSel([]); }, disabled: !videoSel.length || videoBusy }, "Deseleziona"),
-            React.createElement("button", { className: "pbtn", onClick: function () { const ph = {}; (archive || []).forEach(function (r) { if (r.before_signed) ph[r.id + ":before"] = { key: r.id + ":before", label: (r.label || "Ambiente") + " \u00B7 Prima", url: r.before_signed, room_id: r.id, kind: "before" }; if (r.after_signed) ph[r.id + ":after"] = { key: r.id + ":after", label: (r.label || "Ambiente") + " \u00B7 Dopo", url: r.after_signed, room_id: r.id, kind: "after" }; }); const items = videoSel.map(function (k) { return ph[k]; }).filter(Boolean); if (items.length) createVideos(items); }, disabled: videoBusy || videoSel.length === 0 }, videoBusy ? "Genero video\u2026" : "\uD83C\uDFAC Crea video (" + videoSel.length + ")")
+            React.createElement("button", { className: "pbtn", onClick: function () { const ph = {}; (archive || []).forEach(function (r) { if (r.before_signed) ph[r.id + ":before"] = { key: r.id + ":before", label: (r.dispLabel || r.label || "Ambiente") + " \u00B7 Prima", url: r.before_signed, room_id: r.id, kind: "before" }; if (r.after_signed) ph[r.id + ":after"] = { key: r.id + ":after", label: (r.dispLabel || r.label || "Ambiente") + " \u00B7 Dopo", url: r.after_signed, room_id: r.id, kind: "after" }; }); const items = videoSel.map(function (k) { return ph[k]; }).filter(Boolean); if (items.length) createVideos(items); }, disabled: videoBusy || videoSel.length === 0 }, videoBusy ? "Genero video\u2026" : "\uD83C\uDFAC Crea video (" + videoSel.length + ")")
           )
         ),
         selMode && archive && archive.length > 0 && React.createElement("div", { style: { position: "sticky", bottom: -1, marginTop: 18, paddingTop: 14, background: "linear-gradient(to top, #0b1020 72%, rgba(11,16,32,0))", display: "flex", flexDirection: "column", gap: 10 } },
@@ -2234,7 +2242,7 @@ function BAMYachtApp() {
               recent.map(function (r, i) {
                 return React.createElement("div", { key: i, style: { display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 12px", background: "rgba(0,0,0,.16)", border: "1px solid rgba(201,168,76,.1)", borderRadius: 3, flexWrap: "wrap" } },
                   React.createElement("div", { style: { minWidth: 0 } },
-                    React.createElement("div", { style: { fontFamily: G, fontSize: 15, color: "#e8dcc8" } }, r.label || "Ambiente"),
+                    React.createElement("div", { style: { fontFamily: G, fontSize: 15, color: "#e8dcc8" } }, r.dispLabel || r.label || "Ambiente"),
                     r.caption && React.createElement("div", { style: { fontSize: 11.5, color: "rgba(232,220,200,.42)", marginTop: 2, lineHeight: 1.4, maxWidth: 560, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, r.caption)
                   ),
                   React.createElement("div", { style: { textAlign: "right", whiteSpace: "nowrap" } },
