@@ -984,7 +984,7 @@ function BAMYachtApp() {
       var SCAFFOLD = "Photorealistic refit of THIS exact yacht interior shown in the image. ABSOLUTE RULES, in order of priority: (1) Keep the room architecture, walls, ceiling, every window and porthole, the exact view seen OUTSIDE through the windows, and the camera viewpoint and perspective IDENTICAL to the original photo. (2) Do NOT empty or simplify the room and do NOT redesign it from scratch: every sofa, armchair, chair, table and lamp that exists in the image must still be present and in the same position in the result, UNLESS the user explicitly asks to remove or move that specific piece. (3) Carry out EVERY change the user lists below as a MANDATORY instruction. Restyle the pieces that stay (colours, fabrics, materials, finishes, lighting) as described. (4) If the user asks for a lighter or different finish, apply it to the ENTIRE room and to EVERY wooden element so that NO original dark or warm-orange wood is left anywhere (unless the user asked to keep wood). The room must remain fully furnished, lived-in and realistic - never a bare empty room.";
       function buildPrompt(extra) { return SCAFFOLD + alreadyGone + keepClause + " User's requested changes: " + styleClause + "." + (extra || "") + " The result must be a believable, fully-furnished luxury yacht interior, professional architectural photography, ultra detailed."; }
       async function runEditB(endpoint, prompt, imgs) {
-        var p = await replicateCreate(endpoint, token, { input: { prompt: prompt, image_input: imgs } });
+        var p = await replicateCreate(endpoint, token, { input: { prompt: prompt, image_input: imgs, aspect_ratio: "match_input_image" } });
         p = await replicatePoll(p, token, 90);
         return Array.isArray(p.output) ? p.output[0] : p.output;
       }
@@ -1126,7 +1126,7 @@ function BAMYachtApp() {
 
       // runEdit generico: stesso modello, ma prompt e immagine di partenza variabili.
       async function runEdit(endpoint, prompt, baseImage) {
-        let p = await replicateCreate(endpoint, token, { input: { prompt: prompt, image_input: [baseImage] } });
+        let p = await replicateCreate(endpoint, token, { input: { prompt: prompt, image_input: [baseImage], aspect_ratio: "match_input_image" } });
         p = await replicatePoll(p, token, 90);
         return Array.isArray(p.output) ? p.output[0] : p.output;
       }
