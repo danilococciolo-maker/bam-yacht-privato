@@ -15,7 +15,7 @@ export const config = { maxDuration: 60 };
 const SUPABASE_URL = "https://ftblcuklncliherrbmgz.supabase.co";
 const SUPABASE_ANON = "sb_publishable_0dkncGh3Vt9Z656g8MU40g_KWCYGeOk"; // chiave pubblica
 const MUSIC_URL = "https://raw.githubusercontent.com/SoundSafari/CC0-1.0-Music/main/freepd.com/Martini%20Sunset.mp3";
-const T = 1.0;        // durata della dissolvenza (secondi)
+const T = 1.5;        // durata della dissolvenza (secondi)
 const W = 1920, H = 1080;
 
 function run(args) {
