@@ -738,6 +738,7 @@ function BAMYachtApp() {
   useEffect(function () { const j = loadVideoJob(); if (j && j.done && j.done.length) setVideoResume(j); }, []);  // id render espanso nel confronto
   const [selMode, setSelMode] = useState(false);         // modalità selezione attiva
   const [selected, setSelected] = useState([]);          // id render selezionati (in ordine)
+  const [delBusy, setDelBusy] = useState(false);          // eliminazione archivio in corso
   const [pdfTitle, setPdfTitle] = useState("");          // titolo del dossier da comporre
   const [composing, setComposing] = useState(false);     // PDF in creazione
   const [resumeJob, setResumeJob] = useState(null);       // lavoro interrotto da riprendere a mano
@@ -931,7 +932,7 @@ function BAMYachtApp() {
 
 
   const loadFilesBatch = useCallback(function (fileList) {
-    var files = Array.prototype.slice.call(fileList || []).filter(function (f) { return f && (!f.type || f.type.indexOf("image/") === 0); }).slice(0, 10);
+    var files = Array.prototype.slice.call(fileList || []).filter(function (f) { return f && (!f.type || f.type.indexOf("image/") === 0); }).slice(0, 15);
     if (!files.length) return;
     setImg(null); setResult(null); setResultB64(null); setErr(null); setBatchDone(null); setBatchErr(null);
     Promise.all(files.map(function (file) {
@@ -1903,6 +1904,29 @@ function BAMYachtApp() {
     }
   }
 
+  async function deleteSelected() {
+    if (!selected.length) return;
+    if (!window.confirm("Eliminare definitivamente " + selected.length + " foto dall'archivio? I video salvati NON vengono toccati.")) return;
+    setDelBusy(true);
+    try {
+      const BK = "dossier-images";
+      const map = {};
+      (archive || []).forEach(function (x) { map[x.id] = x; });
+      const ids = selected.slice();
+      const paths = [];
+      ids.forEach(function (id) { const r = map[id]; if (r) { if (r.before_path) paths.push(r.before_path); if (r.after_path) paths.push(r.after_path); } });
+      if (paths.length) { try { await supabaseClient.storage.from(BK).remove(paths); } catch (_) {} }
+      const delRes = await supabaseClient.from("dossier_rooms").delete().in("id", ids);
+      if (delRes.error) throw delRes.error;
+      setSelected([]); setSelMode(false); setArchiveOpen(null);
+      setArchive(null); await loadArchive();
+    } catch (e) {
+      setArchiveErr("Eliminazione non riuscita: " + (e && e.message ? e.message : String(e)));
+    } finally {
+      setDelBusy(false);
+    }
+  }
+
   const G = "'Cormorant Garamond', Georgia, serif";
 
   return React.createElement("div", null,
@@ -2102,6 +2126,7 @@ function BAMYachtApp() {
           React.createElement("div", { style: { fontSize: 12, color: "#c9a84c", letterSpacing: ".06em" } }, selected.length === 0 ? "Nessun render selezionato" : (selected.length === 1 ? "1 render selezionato" : selected.length + " render selezionati")),
           React.createElement("input", { className: "inp", type: "text", placeholder: "Titolo del dossier (es. M/Y SISA)", value: pdfTitle, onChange: (e) => setPdfTitle(e.target.value) }),
           React.createElement("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" } },
+            React.createElement("button", { className: "sbtn", onClick: deleteSelected, disabled: !selected.length || delBusy, style: { borderColor: "rgba(220,80,80,.55)", color: "#e08080" } }, delBusy ? "Elimino\u2026" : ("\uD83D\uDDD1 Elimina (" + selected.length + ")")),
             React.createElement("button", { className: "sbtn", onClick: () => setSelected([]), disabled: !selected.length }, "Deseleziona"),
             React.createElement("button", { className: "sbtn", onClick: () => { const map = {}; (archive || []).forEach(function (x) { map[x.id] = x; }); const rs = selected.map(function (id) { return map[id]; }).filter(Boolean); if (rs.length) createShare(rs, pdfTitle); }, disabled: shareBusy || selected.length === 0 }, shareBusy ? "Creo link\u2026" : "\uD83D\uDD17 Crea link"),
             React.createElement("button", { className: "pbtn", onClick: () => { const map = {}; (archive || []).forEach(function (x) { map[x.id] = x; }); const rs = selected.map(function (id) { return map[id]; }).filter(Boolean); if (rs.length) composePDF(rs, pdfTitle); }, disabled: composing || selected.length === 0 }, composing ? "Creazione PDF\u2026" : "\u2193 Crea PDF (" + selected.length + ")")
@@ -2304,7 +2329,7 @@ function BAMYachtApp() {
         ),
         React.createElement("input", { ref: fileRef, type: "file", accept: "image/*", multiple: true, style: { display: "none" }, onChange: (e) => { var fs = e.target.files; if (fs && fs.length > 1) { loadFilesBatch(fs); } else { setBatchPhotos([]); loadFile(fs && fs[0]); } } }),
         React.createElement("div", { style: { marginBottom: 18 } },
-          batchPhotos.length > 0 && React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 16 } },
+          batchPhotos.length > 0 && React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 14, marginBottom: 16 } },
             batchPhotos.map(function (p, i) {
               return React.createElement("div", { key: i, style: { position: "relative" } },
                 React.createElement("img", { src: p.data, style: { width: 76, height: 56, objectFit: "cover", borderRadius: 3, border: "1px solid rgba(201,168,76,.3)" } }),
