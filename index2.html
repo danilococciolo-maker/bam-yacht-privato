@@ -237,7 +237,7 @@ const EDIT_ENDPOINT = "/v1/models/google/nano-banana-pro/predictions";
 const EDIT_FALLBACK_ENDPOINT = "/v1/models/google/nano-banana/predictions";
 const JUDGE_ENDPOINT = "/v1/models/google/gemini-3-flash/predictions";
 const N_SAMPLES = 3;
-const NANO_POLISH = " CRITICAL SECOND-PASS - QUALITY AND FIDELITY REFINEMENT, do NOT re-design: the image provided is an already geometry-corrected render of THIS exact yacht interior. Keep the EXACT room geometry, size and proportions, every window and porthole in the same position and shape with the same outside view, the SAME camera viewpoint, perspective and framing, and the SAME furniture layout (the same pieces in the same positions) as in this image. Do NOT enlarge, stretch, redesign or rebuild the room, do NOT add a dining table or any furniture not already present, do NOT move or replace windows. If the image still shows any out-of-place clutter or temporary items (folding or director chairs left out or stacked, ladders, tools, boxes, bags, loose shoes, cables, cleaning gear, fenders, bottles or dishes), REMOVE them and rebuild the matching floor and background behind them, while keeping all designed furniture in place. Apply the requested finishes REALISTICALLY. If a teak or light teak floor (pavimento teak chiaro) is requested, the floor MUST read as REAL warm light teak WOOD with clearly visible natural planks and wood grain - light honey-toned natural wood - and it must stay WOOD: never painted white, never bleached, never a flat pale or uniform surface. Convert ONLY the original dark wood trim and dark panels to the requested lighter cream tone, while keeping every surface looking like a real finished material with visible texture and detail. CRITICAL - preserve photographic realism: keep natural, correct exposure, soft realistic shadows, depth and material texture; cream and white surfaces must retain subtle tonal variation and fine detail. Do NOT overexpose, do NOT wash out, do NOT blow out the highlights, and do NOT flatten the whole scene into a uniform white or pale image. The result must look like a professionally lit real photograph of a luxury yacht interior, ultra detailed and sharp, with believable contrast between the warm teak floor and the lighter walls.";
+const NANO_POLISH = " FINAL QUALITY POLISH PASS - improve ONLY the photographic quality of this image and change NOTHING else. Enhance sharpness, realistic lighting, reflections, soft natural shadows, fine texture and material detail, like a professional photo retouch of a luxury yacht interior. Do NOT restyle, recolour, redraw, enlarge, simplify, declutter or rebuild anything. Keep the EXACT same composition, room geometry and proportions, the same walls, ceiling and floor, every window and porthole with the same outside view, the same camera viewpoint, perspective and framing, and every single piece of furniture and object in the same position, shape, colour and material as in this image. Do NOT add, remove or move anything, and do NOT change any colour or finish. Only make it look like a sharper, cleaner, professionally lit real photograph, with natural correct exposure - do NOT overexpose, wash out or blow out the highlights.";
 
 
 // ====================== MOTORE VIDEO (Veo 3.1 i2v + merge) ======================
@@ -1005,7 +1005,7 @@ function BAMYachtApp() {
         var fluxOut = null;
         try { fluxOut = await runFluxB(prompt, imgs); } catch (_) { fluxOut = null; }
         if (!fluxOut) return await runNanoB(prompt, imgs);
-        var polished = await runNanoB(prompt + NANO_POLISH, [fluxOut]);
+        var polished = await runNanoB(NANO_POLISH, [fluxOut]);
         return polished || fluxOut;
       }
       var sess = await supabaseClient.auth.getSession();
@@ -1169,7 +1169,7 @@ function BAMYachtApp() {
         // Se Flux non risponde, ripiego: nano-banana direttamente sulla foto originale.
         if (!fluxOut) return await runNano(prompt, baseImage);
         // Passo 2: nano-banana abbellisce il render di Flux, vincolato a NON cambiare la stanza.
-        const polished = await runNano(prompt + NANO_POLISH, fluxOut);
+        const polished = await runNano(NANO_POLISH, fluxOut);
         return polished || fluxOut; // se la rifinitura fallisce, resta il render di Flux (geometria ok)
       }
 
