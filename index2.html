@@ -237,7 +237,7 @@ const EDIT_ENDPOINT = "/v1/models/google/nano-banana-pro/predictions";
 const EDIT_FALLBACK_ENDPOINT = "/v1/models/google/nano-banana/predictions";
 const JUDGE_ENDPOINT = "/v1/models/google/gemini-3-flash/predictions";
 const N_SAMPLES = 3;
-const NANO_POLISH = "You are given an already-restyled photo of THIS exact yacht interior. Your ONLY job is to refine and beautify it to magazine quality: enrich the materials and textures, perfect the fabrics, wood and metal finishes, improve the realism of the lighting, reflections and shadows, and add fine photographic detail. ABSOLUTE CONSTRAINTS - do NOT redesign or rebuild the room: keep the EXACT same room geometry, size and proportions, the EXACT same walls, ceiling and floor, EVERY window and porthole in the same position and shape with the same outside view, the EXACT same camera viewpoint, perspective and framing, and the EXACT same furniture layout and pieces in the same positions as in this image. Do NOT enlarge or stretch the room, do NOT add a dining table or extra furniture that is not already here, do NOT move or replace windows, do NOT change the floor plan. Only improve quality and finish on top of what is already present. Photorealistic, ultra detailed, professional architectural photography.";
+const NANO_POLISH = " CRITICAL SECOND-PASS REFINEMENT: the image provided is an already geometry-corrected render of THIS exact yacht interior. Now APPLY THE REQUESTED FINISHES AND MATERIALS FULLY and visibly - act on the user's requested changes stated above: change the floor, the wall and ceiling finishes, the fabrics, the upholstery and the lighting exactly as requested. In particular, if a light teak / light wood floor (pavimento teak chiaro) or a cream/lighter finish is requested, the floor and EVERY wooden surface MUST clearly become that finish, with NO original dark, brown or orange wood left anywhere. AT THE SAME TIME keep the EXACT room geometry, size and proportions, every window and porthole in the same position and shape with the same outside view, the SAME camera viewpoint, perspective and framing, and the SAME furniture layout (the same pieces in the same positions) as in this image. Do NOT enlarge, stretch, redesign or rebuild the room, do NOT add a dining table or any furniture that is not already present, do NOT remove existing furniture, do NOT move or replace windows. Only change surface finishes, materials, colours and lighting on top of the existing geometry. Photorealistic, ultra detailed, professional architectural photography.";
 
 
 // ====================== MOTORE VIDEO (Veo 3.1 i2v + merge) ======================
@@ -1005,7 +1005,7 @@ function BAMYachtApp() {
         var fluxOut = null;
         try { fluxOut = await runFluxB(prompt, imgs); } catch (_) { fluxOut = null; }
         if (!fluxOut) return await runNanoB(prompt, imgs);
-        var polished = await runNanoB(NANO_POLISH, [fluxOut]);
+        var polished = await runNanoB(prompt + NANO_POLISH, [fluxOut]);
         return polished || fluxOut;
       }
       var sess = await supabaseClient.auth.getSession();
@@ -1169,7 +1169,7 @@ function BAMYachtApp() {
         // Se Flux non risponde, ripiego: nano-banana direttamente sulla foto originale.
         if (!fluxOut) return await runNano(prompt, baseImage);
         // Passo 2: nano-banana abbellisce il render di Flux, vincolato a NON cambiare la stanza.
-        const polished = await runNano(NANO_POLISH, fluxOut);
+        const polished = await runNano(prompt + NANO_POLISH, fluxOut);
         return polished || fluxOut; // se la rifinitura fallisce, resta il render di Flux (geometria ok)
       }
 
