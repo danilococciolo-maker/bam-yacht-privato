@@ -7,6 +7,9 @@ import { writeFile, readFile, mkdtemp, rm } from "fs/promises";
 import os from "os";
 import path from "path";
 import ffmpegPath from "ffmpeg-static";
+import { createWriteStream } from "fs";
+import { pipeline } from "stream/promises";
+import { Readable } from "stream";
 
 export const config = { maxDuration: 300 };
 
@@ -44,8 +47,8 @@ function parseDurFps(stderr) {
 async function download(url, dest) {
   const r = await fetch(url);
   if (!r.ok) throw new Error("download " + r.status);
-  const buf = Buffer.from(await r.arrayBuffer());
-  await writeFile(dest, buf);
+  // streaming su disco: non bufferizzo l'intera clip in memoria (riduce la RAM dell'istanza)
+  await pipeline(Readable.fromWeb(r.body), createWriteStream(dest));
 }
 
 export default async function handler(req, res) {
@@ -146,7 +149,7 @@ export default async function handler(req, res) {
     const args = [];
     for (let i = 0; i < files.length; i++) args.push("-i", files[i]);
     args.push("-stream_loop", "-1", "-i", musicFile, "-filter_complex", fc, "-map", "[vfinal]", "-map", "[aout]", "-t", String(total),
-      "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "19", "-maxrate", "14M", "-bufsize", "28M", "-threads", "0",
+      "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "19", "-maxrate", "14M", "-bufsize", "14M", "-threads", "2", "-filter_complex_threads", "1",
       "-c:a", "aac", path.join(dir, "out.mp4"));
     const enc = await run(args);
     if (enc.code !== 0) return res.status(500).json({ error: "ffmpeg failed", detail: enc.err.slice(-400) });
