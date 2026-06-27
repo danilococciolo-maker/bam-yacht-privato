@@ -3,7 +3,7 @@
   "functions": {
     "api/crossfade.js": {
       "memory": 3009,
-      "maxDuration": 300
+      "maxDuration": 800
     },
     "api/save-video.js": {
       "maxDuration": 300
