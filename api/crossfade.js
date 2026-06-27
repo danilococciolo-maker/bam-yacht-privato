@@ -10,8 +10,8 @@ import ffmpegPath from "ffmpeg-static";
 
 export const config = { maxDuration: 300 };
 
-const SUPABASE_URL = "https://ruedykgseogsmieqmffd.supabase.co";
-const SUPABASE_ANON = "sb_publishable_jDuqu9CMy_yg4rY41jtXPA_cJWcIMxD"; // chiave pubblica
+const SUPABASE_URL = "https://ftblcuklncliherrbmgz.supabase.co";
+const SUPABASE_ANON = "sb_publishable_0dkncGh3Vt9Z656g8MU40g_KWCYGeOk"; // chiave pubblica
 const MUSIC_POOL = [
   "https://raw.githubusercontent.com/SoundSafari/CC0-1.0-Music/main/freepd.com/Martini%20Sunset.mp3",
   "https://raw.githubusercontent.com/SoundSafari/CC0-1.0-Music/main/freepd.com/Relaxing%20Ballad.mp3",
