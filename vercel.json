@@ -1,13 +1,32 @@
-{
+
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/crossfade.js": {
+      "memory": 3009,
+      "maxDuration": 300
+    },
+    "api/save-video.js": {
+      "maxDuration": 300
+    }
+  },
   "rewrites": [
-    { "source": "/v1/:path*", "destination": "/api/replicate?path=/v1/:path*" },
-    { "source": "/", "destination": "/index2.html" }
+    {
+      "source": "/v1/:path*",
+      "destination": "/api/replicate?path=/v1/:path*"
+    },
+    {
+      "source": "/",
+      "destination": "/index2.html"
+    }
   ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
       ]
     }
   ]
