@@ -1825,16 +1825,9 @@ function BAMYachtApp() {
     // 1) dissolvenza + musica + togli-bande (gia' salvato su Supabase)
     let assembled = null;
     try { const cf = await crossfadeMerge(urls); if (cf) assembled = cf; } catch (_) {}
-    if (!assembled) {
-      const url = await mergeClips(urls, token);
-      if (url) {
-        try {
-          const p = await cloudSaveVideo(url, "merged", "Video unico", null, { source_count: urls.length });
-          if (p) { const sg = await supabaseClient.storage.from(VIDEO_BUCKET).createSignedUrl(p, 3600); if (sg && sg.data && sg.data.signedUrl) assembled = sg.data.signedUrl; }
-        } catch (_) {}
-        if (!assembled) assembled = url;
-      }
-    }
+    // Nessun ripiego a 1080p via Replicate: se il montaggio 2.5K non riesce, restituiamo
+    // null e l'app mostra un errore chiaro, invece di consegnare un video di qualita'
+    // inferiore (stacco netto, niente dissolvenze) facendo anche spendere GPU.
     if (!assembled) return null;
     // Niente upscale Topaz: il video unito 2.5K con musica, dissolvenza e watermark e' gia' il file finale
     // (Topaz toglieva l'audio e raddoppiava i tempi).
