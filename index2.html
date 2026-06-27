@@ -548,13 +548,27 @@ async function ensureHiResForVeo(imageUrl) {
   return imageUrl;
 }
 
+// Estrae in modo ROBUSTO un URL https dall'output di una predizione Replicate,
+// che puo' essere una stringa, un array, oppure un oggetto ({video:...},{url:...}, ecc.).
+// Se non trova un URL https valido restituisce null: cosi la clip viene scartata e
+// MAI salvata con un URL finto tipo "[object Object]" (la causa dei 400 su save-video).
+function firstUrl(out) {
+  if (typeof out === "string") return /^https:\/\//.test(out) ? out : null;
+  if (Array.isArray(out)) { for (let i = 0; i < out.length; i++) { const u = firstUrl(out[i]); if (u) return u; } return null; }
+  if (out && typeof out === "object") {
+    const keys = ["video", "url", "output", "file", "mp4", "uri", "video_url"];
+    for (let i = 0; i < keys.length; i++) { const u = firstUrl(out[keys[i]]); if (u) return u; }
+    for (const k in out) { const u = firstUrl(out[k]); if (u) return u; }
+    return null;
+  }
+  return null;
+}
+
 // Genera UNA clip Veo da una foto (URL firmato, fetchato lato Replicate).
 async function veoClip(imageUrl, token, shouldStop, endpoint) {
   let pred = await replicateCreate(endpoint || VEO_ENDPOINT, token, { input: { prompt: PROMPT_VEO_MOVE, image: imageUrl, duration: 8, resolution: "1080p" } });
   pred = await replicatePoll(pred, token, 180, shouldStop);
-  let out = pred.output;
-  if (Array.isArray(out)) out = out[0];
-  return out ? String(out) : null;
+  return firstUrl(pred.output);
 }
 
 // Giudica UNA clip con Gemini: video + immagine di riferimento -> {move,fid}.
@@ -634,18 +648,14 @@ async function addMusic(videoUrl, musicUrl, token) {
   const ver = await modelVersion(MUSIC_MERGE_MODEL_ENDPOINT, token);
   let pred = await replicateCreate(PREDICTIONS_ENDPOINT, token, { version: ver, input: { video_file: videoUrl, audio_file: musicUrl, replace_audio: true, duration_mode: "video", audio_volume: 0.85 } });
   pred = await replicatePoll(pred, token, 150);
-  let out = pred.output;
-  if (Array.isArray(out)) out = out[0];
-  return out ? String(out) : null;
+  return firstUrl(pred.output);
 }
 
 // Upscale AI fino a 4K con Topaz (modello ufficiale, temporal-aware: niente sfarfallio).
 async function topazUpscale(videoUrl, token) {
   let pred = await replicateCreate(TOPAZ_VIDEO_ENDPOINT, token, { input: { video: videoUrl, upscale_factor: "2x" } });
   pred = await replicatePoll(pred, token, 300);
-  let out = pred.output;
-  if (Array.isArray(out)) out = out[0];
-  return out ? String(out) : null;
+  return firstUrl(pred.output);
 }
 
 // Unisce piu' clip in UN solo mp4 e applica una musica unica su tutta la durata.
@@ -654,9 +664,7 @@ async function mergeClips(urls, token) {
   // 1) unisci le clip SENZA l'audio spezzettato
   let pred = await replicateCreate(PREDICTIONS_ENDPOINT, token, { version: ver, input: { video_files: urls, keep_audio: false } });
   pred = await replicatePoll(pred, token, 150);
-  let out = pred.output;
-  if (Array.isArray(out)) out = out[0];
-  const merged = out ? String(out) : null;
+  const merged = firstUrl(pred.output);
   if (!merged) return null;
   // 2) musica unica su tutto (best-effort: se fallisce resta comunque il video unito)
   try {
@@ -1657,6 +1665,7 @@ function BAMYachtApp() {
       const jwt = sess ? sess.access_token : null;
       const uid = sess && sess.user ? sess.user.id : null;
       if (!jwt || !uid) return null;
+      if (!url || !/^https:\/\//.test(String(url))) return null; // mai inviare un URL non valido a save-video (evita i 400)
       const path = uid + "/" + Date.now() + "_" + Math.random().toString(36).slice(2, 8) + ".mp4";
       const r = await fetch(SAVE_VIDEO_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url, path: path, jwt: jwt }) });
       if (!r.ok) return null;
@@ -1829,7 +1838,7 @@ function BAMYachtApp() {
       // Genero le stanze a piccoli gruppi IN PARALLELO (i campioni di ogni stanza sono
       // gia' paralleli). Il risultato di ogni clip e' identico: cambia solo che piu' stanze
       // partono insieme. mapStaggered sfalsa le partenze e replicateCreate ritenta sui 429.
-      const VIDEO_BATCH = 3; // stanze in parallelo per gruppo (3 = fino a 6 generazioni Veo insieme)
+      const VIDEO_BATCH = 2; // stanze in parallelo per gruppo (2 = fino a 4 generazioni Veo insieme, evita i 429 di Veo)
       async function processRoom(i) {
         if (videoStopRef.current) return { stop: true };
         if (items[i].key && priorByKey[items[i].key]) {
