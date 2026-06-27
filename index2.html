@@ -1698,24 +1698,33 @@ function BAMYachtApp() {
       let signed = [];
       try { const sg = await supabaseClient.storage.from(VIDEO_BUCKET).createSignedUrls(paths, 3600); signed = (sg && sg.data) ? sg.data : []; } catch (_) { signed = []; }
       const byPath = {}; signed.forEach(function (x) { if (x && x.path) byPath[x.path] = x.signedUrl; });
-      const out = rows.map(function (r) { return { id: r.id, label: r.label, kind: r.kind, is_merged: r.is_merged, url: byPath[r.storage_path] || null, created_at: r.created_at }; }).filter(function (x) { return x.url; });
+      const out = rows.map(function (r) { return { id: r.id, label: r.label, kind: r.kind, is_merged: r.is_merged, storage_path: r.storage_path, url: byPath[r.storage_path] || null, created_at: r.created_at }; }).filter(function (x) { return x.url; });
       setSavedVideos(out);
     } catch (_) { setSavedVideos([]); }
     finally { setSavedBusy(false); }
   }
 
+  function isIOSDevice() {
+    try {
+      const ua = navigator.userAgent || "";
+      return /iP(hone|ad|od)/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    } catch (_) { return false; }
+  }
+
   async function saveToDevice(url, name) {
     const fname = name || ("BAM-video-" + Date.now() + ".mp4");
+    // iPad/iPhone: il download via <a download> non apre nulla e navigator.share dopo un
+    // await perde il "gesto utente". Apriamo il video in una nuova scheda nello stesso tocco:
+    // iOS mostra il player nativo e dal tasto Condividi si salva in File o Foto.
+    if (isIOSDevice()) {
+      try { window.open(url, "_blank"); } catch (_) { try { window.location.href = url; } catch (e) {} }
+      return;
+    }
     setDlBusy(true);
     try {
       const resp = await fetch(url);
       if (!resp.ok) throw new Error("fetch " + resp.status);
       const blob = await resp.blob();
-      const file = new File([blob], fname, { type: "video/mp4" });
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: "BAM Vision" }); return; }
-        catch (e) { if (e && e.name === "AbortError") return; }
-      }
       const u = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = u; a.download = fname; document.body.appendChild(a); a.click(); a.remove();
@@ -1790,13 +1799,24 @@ function BAMYachtApp() {
     return assembled;
   }
 
+  async function freshUrlsFor(clips) {
+    const paths = clips.map(function (c) { return c.storage_path; }).filter(Boolean);
+    if (!paths.length) return clips.map(function (c) { return c.url; }).filter(Boolean);
+    try {
+      const sg = await supabaseClient.storage.from(VIDEO_BUCKET).createSignedUrls(paths, 3600);
+      const byPath = {}; (((sg && sg.data) || [])).forEach(function (s) { if (s && s.path && s.signedUrl) byPath[s.path] = s.signedUrl; });
+      return clips.map(function (c) { return byPath[c.storage_path] || c.url; }).filter(Boolean);
+    } catch (_) { return clips.map(function (c) { return c.url; }).filter(Boolean); }
+  }
+
   async function mergeSaved() {
-    const clips = (savedVideos || []).filter(function (v) { return !v.is_merged && v.url; });
+    const clips = (savedVideos || []).filter(function (v) { return !v.is_merged && (v.storage_path || v.url); });
     if (clips.length < 2) { setMergeErr("Servono almeno 2 clip salvate per unire."); return; }
-    if (!token) { setMergeErr("Manca il token Replicate."); return; }
     setMergeErr(null); setMerging(true);
     try {
-      const url = await runMerge(clips.map(function (c) { return c.url; }));
+      const urls = await freshUrlsFor(clips);
+      if (urls.length < 2) throw new Error("Link delle clip non validi, riapri l'archivio e riprova.");
+      const url = await runMerge(urls);
       if (!url) throw new Error("Unione non riuscita.");
       setMergedUrl(url);
       loadSavedVideos();
@@ -1807,12 +1827,13 @@ function BAMYachtApp() {
   async function mergeSelected() {
     const byId = {};
     (savedVideos || []).forEach(function (v) { byId[v.id || v.url] = v; });
-    const clips = mergeSel.map(function (k) { return byId[k]; }).filter(function (v) { return v && v.url; });
+    const clips = mergeSel.map(function (k) { return byId[k]; }).filter(function (v) { return v && (v.storage_path || v.url); });
     if (clips.length < 2) { setMergeErr("Seleziona almeno 2 video per unirli."); return; }
-    if (!token) { setMergeErr("Manca il token Replicate."); return; }
     setMergeErr(null); setMerging(true);
     try {
-      const url = await runMerge(clips.map(function (c) { return c.url; }));
+      const urls = await freshUrlsFor(clips);
+      if (urls.length < 2) throw new Error("Link dei video non validi, riapri l'archivio e riprova.");
+      const url = await runMerge(urls);
       if (!url) throw new Error("Unione non riuscita.");
       setMergedUrl(url);
       setMergeSel([]);
@@ -1915,7 +1936,6 @@ function BAMYachtApp() {
   }
 
   async function mergeVideos() {
-    if (!token) { setMergeErr("Manca il token Replicate."); return; }
     if (!videoClips || videoClips.length < 2) return;
     setMergeErr(null); setMerging(true);
     try {
