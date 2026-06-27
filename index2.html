@@ -1826,32 +1826,49 @@ function BAMYachtApp() {
     try {
       let uid = null;
       try { const au = await supabaseClient.auth.getUser(); uid = au && au.data && au.data.user ? au.data.user.id : null; } catch (_) {}
-      for (let i = 0; i < items.length; i++) {
-        if (videoStopRef.current) { push("\u23F9 Interrotto. Le clip gi\u00E0 pronte restano salvate; ripremi \u00ABCrea video\u00BB per riprendere da dove eri."); break; }
-        setVideoProg({ done: i, total: items.length, name: items[i].label || "" });
-        let clip;
+      // Genero le stanze a piccoli gruppi IN PARALLELO (i campioni di ogni stanza sono
+      // gia' paralleli). Il risultato di ogni clip e' identico: cambia solo che piu' stanze
+      // partono insieme. mapStaggered sfalsa le partenze e replicateCreate ritenta sui 429.
+      const VIDEO_BATCH = 2; // stanze in parallelo per gruppo (alzabile a 3 dopo un test ok)
+      async function processRoom(i) {
+        if (videoStopRef.current) return { stop: true };
         if (items[i].key && priorByKey[items[i].key]) {
-          clip = priorByKey[items[i].key];
-          push("\u21BB " + (clip.label || "Foto") + ": riuso la clip gi\u00E0 pronta (nessun costo).");
-        } else {
-          let made = null;
-          for (let attempt = 0; attempt < 2 && !made && !videoStopRef.current; attempt++) {
-            try { made = await makeRoomVideo(items[i], token, push, function () { return videoStopRef.current; }); }
-            catch (errRoom) { if (attempt === 0 && !videoStopRef.current) push("\u21BB " + (items[i].label || ("Ambiente " + (i + 1))) + ": riprovo una volta\u2026"); }
-          }
-          if (videoStopRef.current) { push("\u23F9 Interrotto. Le clip gi\u00E0 pronte restano salvate; ripremi \u00ABCrea video\u00BB per riprendere da dove eri."); break; }
-          if (!made) {
-            push("\u26A0 " + (items[i].label || ("Ambiente " + (i + 1))) + ": saltato (nessuna versione riuscita). Vado avanti.");
-            failed.push(items[i].label || ("Ambiente " + (i + 1)));
+          return { clip: priorByKey[items[i].key], reused: true };
+        }
+        let made = null;
+        for (let attempt = 0; attempt < 2 && !made && !videoStopRef.current; attempt++) {
+          try { made = await makeRoomVideo(items[i], token, push, function () { return videoStopRef.current; }); }
+          catch (errRoom) { if (attempt === 0 && !videoStopRef.current) push("\u21BB " + (items[i].label || ("Ambiente " + (i + 1))) + ": riprovo una volta\u2026"); }
+        }
+        if (videoStopRef.current) return { stop: true };
+        if (!made) return { failedLabel: items[i].label || ("Ambiente " + (i + 1)) };
+        made.key = items[i].key || null;
+        try { await cloudSaveVideo(made.url, made.kind || "after", made.label, made.room_id, { move_score: made.move, fidelity_score: made.fid, samples: VIDEO_N_SAMPLES }); } catch (_) {}
+        return { clip: made };
+      }
+      let interrotto = false;
+      for (let start = 0; start < items.length && !interrotto; start += VIDEO_BATCH) {
+        if (videoStopRef.current) { interrotto = true; break; }
+        const idxs = [];
+        for (let j = start; j < Math.min(start + VIDEO_BATCH, items.length); j++) idxs.push(j);
+        setVideoProg({ done: done.length, total: items.length, name: items[idxs[0]].label || "" });
+        const results = await mapStaggered(idxs, 400, function (i) { return processRoom(i); });
+        for (let r = 0; r < results.length; r++) {
+          const res = results[r] || {};
+          if (res.stop) { interrotto = true; continue; }
+          if (res.failedLabel) {
+            push("\u26A0 " + res.failedLabel + ": saltato (nessuna versione riuscita). Vado avanti.");
+            failed.push(res.failedLabel);
             continue;
           }
-          clip = made;
-          clip.key = items[i].key || null;
-          try { await cloudSaveVideo(clip.url, clip.kind || "after", clip.label, clip.room_id, { move_score: clip.move, fidelity_score: clip.fid, samples: VIDEO_N_SAMPLES }); } catch (_) {}
+          if (res.clip) {
+            if (res.reused) push("\u21BB " + (res.clip.label || "Foto") + ": riuso la clip gi\u00E0 pronta (nessun costo).");
+            done.push(res.clip);
+            setVideoClips(done.slice());
+            saveVideoJob({ ts: Date.now(), items: meta, done: done, merged: null });
+          }
         }
-        done.push(clip);
-        setVideoClips(done.slice());
-        saveVideoJob({ ts: Date.now(), items: meta, done: done, merged: null });
+        if (interrotto || videoStopRef.current) { push("\u23F9 Interrotto. Le clip gi\u00E0 pronte restano salvate; ripremi \u00ABCrea video\u00BB per riprendere da dove eri."); interrotto = true; break; }
       }
       setVideoProg({ done: items.length, total: items.length, name: "" });
       let doneMsg = "\u2014 Fatto: " + done.length + (done.length === 1 ? " clip pronta." : " clip pronte.");
