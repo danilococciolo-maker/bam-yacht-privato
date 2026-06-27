@@ -1,6 +1,7 @@
 {
   "rewrites": [
-    { "source": "/v1/:path*", "destination": "/api/replicate?path=/v1/:path*" }
+    { "source": "/v1/:path*", "destination": "/api/replicate?path=/v1/:path*" },
+    { "source": "/", "destination": "/index2.html" }
   ],
   "headers": [
     {
