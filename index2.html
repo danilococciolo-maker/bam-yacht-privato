@@ -32,6 +32,7 @@ body{font-family:'Crimson Text',Georgia,serif;background:#1a2540;color:#e8dcc8;m
 @keyframes glow{0%,100%{opacity:.62}50%{opacity:1;text-shadow:0 0 22px rgba(201,168,76,.55)}}
 .ltxt{font-family:'Cormorant Garamond',serif;font-size:20px;font-style:italic;color:#c9a84c;letter-spacing:.08em;animation:glow 2.5s ease-in-out infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+@keyframes bamslide{0%{transform:translateX(-120%)}100%{transform:translateX(360%)}}
 .sp{width:44px;height:44px;border:1.5px solid rgba(201,168,76,.1);border-top-color:#c9a84c;border-right-color:rgba(201,168,76,.4);border-radius:50%;animation:spin 1.1s linear infinite;margin:0 auto}
 @keyframes fu{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
 .rv{animation:fu .65s ease forwards}
@@ -252,6 +253,7 @@ const VIDEO_JOB_KEY = "bam_video_job_v1"; // salvataggio locale per ripresa/rius
 const SAVE_VIDEO_ENDPOINT = "/api/save-video"; // copia video su Supabase (permanente)
 const CROSSFADE_ENDPOINT = "/api/crossfade"; // unione con dissolvenza + musica (ffmpeg)
 const VIDEO_BUCKET = "dossier-videos";
+const MAX_MERGE = 12; // numero massimo di clip in un solo video
 const PROMPT_VEO_MOVE = "Very slow, gentle, minimal camera movement that stays STRICTLY INSIDE the borders of this exact image: a slow, smooth zoom-in or tiny forward push toward the centre of the room, a very small creep that keeps almost the same framing for the whole clip, barely moving, almost still. The camera must NEVER pan, tilt, roll, orbit, swing, truck, crane or pull back, and must NEVER travel through, into or past any door, doorway, opening, archway, hallway, corridor or window. Show ONLY what is already visible inside this single frame and absolutely nothing else. Do NOT invent, add, imagine, extend, continue or reveal any new space, room, cabin, kitchen, galley, corridor, hallway, staircase, doorway, door, opening, window, wall or architecture beyond the edges of the frame; never expand or widen the scene; never reveal what could be behind, beyond or outside the visible space; never show the other side of any door or opening. Stay perfectly faithful to this exact image for the entire clip, as if filming the real room from a tripod with only a tiny slow forward creep, never uncovering anything that is not already in the picture. Every object stays fully opaque, solid and present for the entire clip: nothing becomes transparent, translucent, glassy, ghosted, faded or dissolved, no furniture disappears or loses its shape, columns and walls stay solid. Keep every material, color, finish and texture EXACTLY as in the image: do not change any metal, do not turn steel, chrome, brushed or satin metal into gold or brass, do not recolor anything, do not change any fabric, upholstery pattern or wood tone, do not restyle or redesign anything. All furniture is solid and rigid: every cabinet, drawer, door, hatch and panel stays fully closed and completely static, nothing opens or moves. No surface deforms, melts, smears, warps, stretches, ripples or morphs; surfaces stay sharp and stable at all times. Do not add, remove, move or alter any object, window, curtain, light fixture or decoration. No new objects, no people, no text. Architecture, columns, lines and proportions stay perfectly fixed. Soft balanced realistic light, photorealistic. Very slow, minimal, steady camera, smooth and stable, almost still.";
 const VIDEO_JUDGE_PROMPT = "You are a strict quality inspector for luxury yacht interior videos. You are given a short AI-generated video (first input) and the original reference image it was generated from (second input). TASK 1 - stability: watch the whole video, especially the second half, for AI defects: any furniture, cabinet, column or wall that becomes transparent, translucent, ghosted, faded, dissolves or disappears; melting, warping, morphing, stretching or rippling of surfaces; cabinet doors or drawers opening; straight lines bending; a straight sofa turning into an angled or corner sofa, or any piece changing its shape. TASK 2 - containment and honesty: check that the video shows ONLY the space that is visible in the reference image and never invents or reveals anything outside it. Heavily penalise the clip if the camera travels through, into or past a door, doorway, opening or window, if it pulls back, pans, orbits or widens to uncover new area, or if the video shows any invented or hallucinated room, cabin, kitchen, galley, corridor, hallway, staircase, doorway, door, opening, window, wall or architecture that is not clearly present in the reference image. A clip that keeps almost the same framing with only a small slow camera move is good; a clip that opens up or reveals new rooms or spaces is bad and must score low. TASK 3 - fidelity: compare the video with the reference image and check material and color fidelity: chrome or steel turning into gold or brass, any color shift, any fabric, upholstery pattern or wood tone changing, any restyling. Ignore differences caused only by lighting. Reply with STRICT JSON only and nothing else, exactly in this form: {\"move_score\": integer 0-100 where 100 means perfectly stable AND fully contained, with zero defects and zero invented or revealed space, and a low value if the clip invents or reveals any space, room, door or opening outside the reference image, \"fidelity\": integer 0-100 where 100 means materials and colors identical to the reference, \"notes\": \"short description or none\"}.";
 
@@ -743,6 +745,9 @@ function BAMYachtApp() {
   const [mergeSel, setMergeSel] = useState([]);          // id dei video salvati selezionati per l'unione
   const [savedBusy, setSavedBusy] = useState(false);
   const [dlBusy, setDlBusy] = useState(false);
+  const [mergeSecs, setMergeSecs] = useState(0);
+  const [saveReady, setSaveReady] = useState(false);
+  const mergedFileRef = useRef(null);
   const [costPerVideo, setCostPerVideo] = useState("5.50");
   const [costPerMerge, setCostPerMerge] = useState("5.00");
   const [videoResume, setVideoResume] = useState(null);
@@ -754,7 +759,28 @@ function BAMYachtApp() {
     }
     if (videoSelMode) loadSavedVideos();
   }, [videoSelMode]);
-  useEffect(function () { const j = loadVideoJob(); if (j && j.done && j.done.length) setVideoResume(j); }, []);  // id render espanso nel confronto
+  useEffect(function () { const j = loadVideoJob(); if (j && j.done && j.done.length) setVideoResume(j); }, []);
+  useEffect(function () {
+    if (!merging) { setMergeSecs(0); return; }
+    const t0 = Date.now(); setMergeSecs(0);
+    const id = setInterval(function () { setMergeSecs(Math.floor((Date.now() - t0) / 1000)); }, 1000);
+    return function () { clearInterval(id); };
+  }, [merging]);
+  useEffect(function () {
+    let cancelled = false; mergedFileRef.current = null; setSaveReady(false);
+    if (!mergedUrl) return;
+    (async function () {
+      try {
+        const r = await fetch(mergedUrl);
+        if (!r.ok || cancelled) return;
+        const b = await r.blob();
+        if (cancelled) return;
+        mergedFileRef.current = new File([b], "BAM-video-unico.mp4", { type: "video/mp4" });
+        setSaveReady(true);
+      } catch (_) {}
+    })();
+    return function () { cancelled = true; };
+  }, [mergedUrl]);  // id render espanso nel confronto
   const [selMode, setSelMode] = useState(false);         // modalità selezione attiva
   const [selected, setSelected] = useState([]);          // id render selezionati (in ordine)
   const [delBusy, setDelBusy] = useState(false);          // eliminazione archivio in corso
@@ -1704,33 +1730,49 @@ function BAMYachtApp() {
     finally { setSavedBusy(false); }
   }
 
-  function isIOSDevice() {
+  function fmtSecs(s) { const m = Math.floor(s / 60), r = s % 60; return m + ":" + (r < 10 ? "0" : "") + r; }
+
+  function downloadBlob(blob, name) {
+    const u = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(u); }, 5000);
+  }
+
+  // Salva restando DENTRO l'app: su iOS apre il pannello Condividi nativo (overlay, niente
+  // nuova scheda) per mettere il video in File o Foto; su desktop scarica il file.
+  function shareFileInApp(file) {
     try {
-      const ua = navigator.userAgent || "";
-      return /iP(hone|ad|od)/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    } catch (_) { return false; }
+      if (file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: "BAM Vision" }).catch(function () {});
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  function saveMerged() {
+    const f = mergedFileRef.current;
+    if (f) {
+      if (shareFileInApp(f)) return;
+      downloadBlob(f, "BAM-video-unico.mp4");
+      return;
+    }
+    saveToDevice(mergedUrl, "BAM-video-unico.mp4");
   }
 
   async function saveToDevice(url, name) {
     const fname = name || ("BAM-video-" + Date.now() + ".mp4");
-    // iPad/iPhone: il download via <a download> non apre nulla e navigator.share dopo un
-    // await perde il "gesto utente". Apriamo il video in una nuova scheda nello stesso tocco:
-    // iOS mostra il player nativo e dal tasto Condividi si salva in File o Foto.
-    if (isIOSDevice()) {
-      try { window.open(url, "_blank"); } catch (_) { try { window.location.href = url; } catch (e) {} }
-      return;
-    }
     setDlBusy(true);
     try {
       const resp = await fetch(url);
       if (!resp.ok) throw new Error("fetch " + resp.status);
       const blob = await resp.blob();
-      const u = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = u; a.download = fname; document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(function () { URL.revokeObjectURL(u); }, 5000);
+      const file = new File([blob], fname, { type: "video/mp4" });
+      if (shareFileInApp(file)) return;
+      downloadBlob(blob, fname);
     } catch (e) {
-      try { window.open(url, "_blank"); } catch (_) {}
+      setMergeErr("Non sono riuscito a salvare il file. Riprova tra poco.");
     } finally { setDlBusy(false); }
   }
 
@@ -1812,6 +1854,7 @@ function BAMYachtApp() {
   async function mergeSaved() {
     const clips = (savedVideos || []).filter(function (v) { return !v.is_merged && (v.storage_path || v.url); });
     if (clips.length < 2) { setMergeErr("Servono almeno 2 clip salvate per unire."); return; }
+    if (clips.length > MAX_MERGE) { setMergeErr("Hai " + clips.length + " clip salvate: troppe. Spunta solo i " + MAX_MERGE + " video (max) che vuoi e premi Unisci selezionati."); return; }
     setMergeErr(null); setMerging(true);
     try {
       const urls = await freshUrlsFor(clips);
@@ -1829,6 +1872,7 @@ function BAMYachtApp() {
     (savedVideos || []).forEach(function (v) { byId[v.id || v.url] = v; });
     const clips = mergeSel.map(function (k) { return byId[k]; }).filter(function (v) { return v && (v.storage_path || v.url); });
     if (clips.length < 2) { setMergeErr("Seleziona almeno 2 video per unirli."); return; }
+    if (clips.length > MAX_MERGE) { setMergeErr("Troppi video: massimo " + MAX_MERGE + ". Deselezionane qualcuno."); return; }
     setMergeErr(null); setMerging(true);
     try {
       const urls = await freshUrlsFor(clips);
@@ -1937,6 +1981,7 @@ function BAMYachtApp() {
 
   async function mergeVideos() {
     if (!videoClips || videoClips.length < 2) return;
+    if (videoClips.length > MAX_MERGE) { setMergeErr("Troppe clip: massimo " + MAX_MERGE + " per un video."); return; }
     setMergeErr(null); setMerging(true);
     try {
       const fresh = await freshSignedByLabel();
@@ -2168,7 +2213,7 @@ function BAMYachtApp() {
           mergedUrl && React.createElement("div", { style: { marginBottom: 16, padding: 12, border: "1px solid rgba(201,168,76,.45)", borderRadius: 6, background: "rgba(201,168,76,.06)" } },
             React.createElement("div", { style: { fontFamily: G, fontSize: 16, color: "#c9a84c", marginBottom: 8 } }, "\u2728 Video unico pronto"),
             React.createElement("video", { key: "merged", src: mergedUrl, controls: true, playsInline: true, style: { width: "100%", borderRadius: 6, background: "#000", display: "block" } }),
-            React.createElement("button", { onClick: function () { saveToDevice(mergedUrl, "BAM-video-unico.mp4"); }, disabled: dlBusy, style: { display: "inline-block", marginTop: 10, color: "#060a14", background: "#c9a84c", padding: "10px 16px", borderRadius: 4, border: "none", fontSize: 13, fontWeight: 600, cursor: "pointer" } }, dlBusy ? "Preparo\u2026" : "\u2193 Salva sull'iPad")
+            React.createElement("button", { onClick: function () { saveMerged(); }, disabled: dlBusy || !saveReady, style: { display: "inline-block", marginTop: 10, color: "#060a14", background: "#c9a84c", padding: "10px 16px", borderRadius: 4, border: "none", fontSize: 13, fontWeight: 600, cursor: "pointer" } }, (dlBusy || !saveReady) ? "Preparo\u2026" : "\u2193 Salva sull'iPad")
           ),
           mergeErr && React.createElement("div", { style: { color: "#e08a7a", fontSize: 13, marginBottom: 10, lineHeight: 1.5 } }, mergeErr),
           videoErr && React.createElement("div", { style: { color: "#e08a7a", fontSize: 13, marginBottom: 10, lineHeight: 1.5 } }, videoErr),
@@ -2197,6 +2242,18 @@ function BAMYachtApp() {
           (videoClips.length >= 2 || (videoClips.length > 0 && !videoBusy)) && React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" } },
             videoClips.length >= 2 && !mergedUrl && React.createElement("button", { className: "pbtn", onClick: mergeVideos, disabled: merging || videoBusy }, merging ? "Creo il video in 4K\u2026 (resta qui)" : "\u2728 Unisci in un video unico (" + videoClips.length + ")"),
             !videoBusy && !merging && React.createElement("button", { className: "sbtn", onClick: resetVideoSession }, "Nuova sessione")
+          )
+        ),
+        merging && React.createElement("div", { style: { position: "fixed", left: 0, top: 0, right: 0, bottom: 0, zIndex: 9999, background: "rgba(6,10,20,.9)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 } },
+          React.createElement("div", { style: { maxWidth: 360, width: "100%", textAlign: "center", border: "1px solid rgba(201,168,76,.4)", borderRadius: 10, padding: 28, background: "#0b1020" } },
+            React.createElement("div", { className: "sp", style: { marginBottom: 18 } }),
+            React.createElement("div", { style: { fontFamily: G, fontSize: 20, color: "#c9a84c", marginBottom: 10, letterSpacing: ".03em" } }, "Sto montando il video"),
+            React.createElement("div", { style: { fontSize: 13, color: "#e8dcc8", lineHeight: 1.6, marginBottom: 18 } }, "Unisco le clip con dissolvenze e musica in qualita 2.5K. Tieni aperta questa pagina."),
+            React.createElement("div", { style: { fontFamily: "monospace", fontSize: 32, color: "#e8dcc8", letterSpacing: ".06em" } }, fmtSecs(mergeSecs)),
+            React.createElement("div", { style: { fontSize: 11.5, color: "rgba(232,220,200,.5)", marginTop: 4 } }, "tempo trascorso - di solito 2-4 minuti"),
+            React.createElement("div", { style: { height: 5, borderRadius: 3, background: "rgba(232,220,200,.12)", overflow: "hidden", marginTop: 18 } },
+              React.createElement("div", { style: { height: "100%", width: "35%", background: "#c9a84c", borderRadius: 3, animation: "bamslide 1.3s linear infinite" } })
+            )
           )
         ),
         videoSelMode && (savedBusy || (savedVideos && savedVideos.length > 0)) && React.createElement("div", { style: { marginTop: 18, border: "1px solid rgba(232,220,200,.14)", borderRadius: 6, padding: 16, background: "rgba(0,0,0,.16)" } },
