@@ -1829,7 +1829,7 @@ function BAMYachtApp() {
       // Genero le stanze a piccoli gruppi IN PARALLELO (i campioni di ogni stanza sono
       // gia' paralleli). Il risultato di ogni clip e' identico: cambia solo che piu' stanze
       // partono insieme. mapStaggered sfalsa le partenze e replicateCreate ritenta sui 429.
-      const VIDEO_BATCH = 2; // stanze in parallelo per gruppo (alzabile a 3 dopo un test ok)
+      const VIDEO_BATCH = 3; // stanze in parallelo per gruppo (3 = fino a 6 generazioni Veo insieme)
       async function processRoom(i) {
         if (videoStopRef.current) return { stop: true };
         if (items[i].key && priorByKey[items[i].key]) {
