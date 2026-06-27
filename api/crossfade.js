@@ -149,19 +149,32 @@ export default async function handler(req, res) {
     const args = [];
     for (let i = 0; i < files.length; i++) args.push("-i", files[i]);
     args.push("-stream_loop", "-1", "-i", musicFile, "-filter_complex", fc, "-map", "[vfinal]", "-map", "[aout]", "-t", String(total),
-      "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "19", "-maxrate", "14M", "-bufsize", "14M", "-threads", "2", "-filter_complex_threads", "1",
+      "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "19", "-maxrate", "14M", "-bufsize", "14M", "-threads", "4", "-filter_complex_threads", "4",
       "-c:a", "aac", path.join(dir, "out.mp4"));
     const enc = await run(args);
     if (enc.code !== 0) return res.status(500).json({ error: "ffmpeg failed", detail: enc.err.slice(-400) });
 
     // 5) carico il risultato (1080p) nel bucket privato come l'utente
     const outBuf = await readFile(path.join(dir, "out.mp4"));
-    const up = await fetch(SUPABASE_URL + "/storage/v1/object/dossier-videos/" + encodeURI(outPath), {
-      method: "POST",
-      headers: { "Authorization": "Bearer " + jwt, "apikey": SUPABASE_ANON, "Content-Type": "video/mp4", "x-upsert": "true" },
-      body: outBuf
-    });
-    if (!up.ok) { const t = await up.text(); return res.status(up.status).json({ error: "Upload failed: " + t.slice(0, 300) }); }
+    function uploadOnce() {
+      return fetch(SUPABASE_URL + "/storage/v1/object/dossier-videos/" + encodeURI(outPath), {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + jwt, "apikey": SUPABASE_ANON, "Content-Type": "video/mp4", "x-upsert": "true" },
+        body: outBuf
+      });
+    }
+    let up = await uploadOnce();
+    if (!up.ok) {
+      const t1 = await up.text();
+      console.log("[crossfade] upload KO #1 status=" + up.status + " body=" + t1.slice(0, 200));
+      up = await uploadOnce(); // secondo tentativo
+      if (!up.ok) {
+        const t2 = await up.text();
+        console.log("[crossfade] upload KO #2 status=" + up.status + " body=" + t2.slice(0, 200));
+        return res.status(up.status).json({ error: "Upload failed: " + t2.slice(0, 300) });
+      }
+    }
+    console.log("[crossfade] upload OK -> " + outPath + " (" + outBuf.length + " bytes)");
 
     return res.status(200).json({ ok: true, path: outPath, seconds: Math.round(total), clip_usate: files.length });
   } catch (e) {
