@@ -568,7 +568,17 @@ function firstUrl(out) {
 async function veoClip(imageUrl, token, shouldStop, endpoint) {
   let pred = await replicateCreate(endpoint || VEO_ENDPOINT, token, { input: { prompt: PROMPT_VEO_MOVE, image: imageUrl, duration: 8, resolution: "1080p" } });
   pred = await replicatePoll(pred, token, 180, shouldStop);
-  return firstUrl(pred.output);
+  const u = firstUrl(pred.output);
+  if (!u) {
+    // DIAGNOSTICA TEMPORANEA: l'output non conteneva un URL https -> mando la sua forma al server per i log.
+    try {
+      const o = pred.output;
+      const shape = (o === null || o === undefined) ? String(o) : (Array.isArray(o) ? ("array[" + o.length + "]") : typeof o);
+      const keys = (o && typeof o === "object" && !Array.isArray(o)) ? Object.keys(o).slice(0, 15) : null;
+      fetch(SAVE_VIDEO_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ diag: "veo-output", shape: shape, keys: keys, sample: JSON.stringify(o).slice(0, 400) }) });
+    } catch (_) {}
+  }
+  return u;
 }
 
 // Giudica UNA clip con Gemini: video + immagine di riferimento -> {move,fid}.
