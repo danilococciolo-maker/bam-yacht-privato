@@ -1785,15 +1785,8 @@ function BAMYachtApp() {
       }
     }
     if (!assembled) return null;
-    // 2) upscale AI a 4K, automatico. Best-effort: se non riesce resta il video unito.
-    try {
-      const url4k = await topazUpscale(assembled, token);
-      if (url4k) {
-        const p = await cloudSaveVideo(url4k, "merged", "Video unico", null, { source_count: urls.length, model: "upscale-4k" });
-        if (p) { try { const sg = await supabaseClient.storage.from(VIDEO_BUCKET).createSignedUrl(p, 3600); if (sg && sg.data && sg.data.signedUrl) return sg.data.signedUrl; } catch (_) {} }
-        return url4k;
-      }
-    } catch (_) {}
+    // Niente upscale Topaz: il video unito 2.5K con musica, dissolvenza e watermark e' gia' il file finale
+    // (Topaz toglieva l'audio e raddoppiava i tempi).
     return assembled;
   }
 
