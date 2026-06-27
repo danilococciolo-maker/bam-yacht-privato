@@ -28,13 +28,20 @@ export default async function handler(req, res) {
 
   let body = req.body;
   if (typeof body === "string") { try { body = JSON.parse(body); } catch (_) { body = {}; } }
+
+  // DIAGNOSTICA TEMPORANEA: il frontend invia qui la forma dell'output di Veo quando firstUrl non trova un URL.
+  if (body && body.diag) {
+    console.log("[DIAG veo-output] " + JSON.stringify({ shape: body.shape, keys: body.keys, sample: body.sample }).slice(0, 900));
+    return res.status(200).json({ ok: true, diag: true });
+  }
+
   const url = body && body.url;
   const outPath = body && body.path;
   const jwt = body && body.jwt;
 
-  if (!url || !outPath || !jwt) return res.status(400).json({ error: "Missing url, path or jwt" });
-  if (!/^https:\/\//.test(String(url))) return res.status(400).json({ error: "Bad url" });
-  if (/\.\./.test(String(outPath))) return res.status(400).json({ error: "Bad path" });
+  if (!url || !outPath || !jwt) { console.log("[DIAG save 400] missing: url=" + (!!url) + " path=" + (!!outPath) + " jwt=" + (!!jwt)); return res.status(400).json({ error: "Missing url, path or jwt" }); }
+  if (!/^https:\/\//.test(String(url))) { console.log("[DIAG save 400] bad-url=" + JSON.stringify(String(url)).slice(0, 200)); return res.status(400).json({ error: "Bad url" }); }
+  if (/\.\./.test(String(outPath))) { console.log("[DIAG save 400] bad-path=" + JSON.stringify(String(outPath)).slice(0, 120)); return res.status(400).json({ error: "Bad path" }); }
 
   let dir;
   try {
