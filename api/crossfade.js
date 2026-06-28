@@ -70,7 +70,7 @@ export default async function handler(req, res) {
   const jwt = body.jwt;
   const outPath = body.path;
 
-  console.log("[crossfade] in v2-spia: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
+  console.log("[crossfade] in v3-fix: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
 
   if (!urlsRaw.length || !jwt || !outPath) {
     console.log("[crossfade] 400 missing: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
@@ -131,7 +131,7 @@ export default async function handler(req, res) {
     //    Ogni operazione tocca al massimo 2 clip -> RAM ~300MB (niente OOM) e ~5x meno CPU
     //    del montaggio a coppie, che ricodificava tutto a ogni passo e andava in timeout su
     //    1 core. Il marchio BAM e' gia' impresso su OGNI clip da save-video.
-    const SC = "fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=bilinear,pad=" + W + ":" + H + ":-1:-1,setsar=1,unsharp=3:3:0.5:3:3:0.0,settb=AVTB";
+    const SC = "fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=bilinear,pad=" + W + ":" + H + ":-1:-1,setsar=1,unsharp=3:3:0.5:3:3:0.0";
     const ENC = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "20", "-maxrate", "14M", "-bufsize", "14M", "-an"];
     const segs = [];
     let total = 0;
@@ -151,7 +151,7 @@ export default async function handler(req, res) {
       const dur = last ? Math.max(0.1, durs[k] - T) : Math.max(0.1, durs[k] - 2 * T);
       const s0 = Math.max(0, Math.round((durs[k - 1] - T) * 1000) / 1000);
       const tr = path.join(dir, "t" + k + ".mp4");
-      const fc = "[0:v]" + SC + ",trim=start=" + s0 + ":end=" + durs[k - 1] + ",setpts=PTS-STARTPTS[a];[1:v]" + SC + ",trim=start=0:end=" + T + ",setpts=PTS-STARTPTS[b];[a][b]xfade=transition=fade:duration=" + T + ":offset=0[v]";
+      const fc = "[0:v]" + SC + ",trim=start=" + s0 + ",setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=0.5[a];[1:v]" + SC + ",trim=start=0:end=1.5,setpts=PTS-STARTPTS[b];[a][b]xfade=transition=fade:duration=" + T + ":offset=0,trim=end=" + T + ",setpts=PTS-STARTPTS[v]";
       const rt = await run(["-i", files[k - 1], "-i", files[k], "-filter_complex", fc, "-map", "[v]"].concat(ENC, [tr]));
       if (rt.code !== 0) return res.status(500).json({ error: "ffmpeg trans" + k, detail: rt.err.slice(-400) });
       const bf = path.join(dir, "b" + k + ".mp4");
