@@ -123,36 +123,54 @@ export default async function handler(req, res) {
       if (i === 0 && d.fps) fps = d.fps;
     }
 
-    // 3) MONTAGGIO A COPPIE su disco: due clip per volta. La RAM resta ~350MB e NON dipende
-    //    dal numero di clip (niente OOM su Vercel, dove il filtro unico apriva tutte le clip
-    //    insieme e finiva la memoria). Ogni passo aggiunge una clip con una dissolvenza.
-    //    Il marchio BAM e' gia' impresso su OGNI clip da save-video: qui NON lo ristampo.
-    const vf1 = "fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=bilinear,pad=" + W + ":" + H + ":-1:-1,setsar=1,settb=AVTB";
+    // 3) MONTAGGIO VELOCE: codifico SOLO il secondo di dissolvenza tra clip adiacenti e i
+    //    "corpi" delle clip, poi li attacco (concat) senza ri-codificare il filmato intero.
+    //    Ogni operazione tocca al massimo 2 clip -> RAM ~300MB (niente OOM) e ~5x meno CPU
+    //    del montaggio a coppie, che ricodificava tutto a ogni passo e andava in timeout su
+    //    1 core. Il marchio BAM e' gia' impresso su OGNI clip da save-video.
+    const SC = "fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=bilinear,pad=" + W + ":" + H + ":-1:-1,setsar=1,unsharp=3:3:0.5:3:3:0.0,settb=AVTB";
+    const ENC = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "20", "-maxrate", "14M", "-bufsize", "14M", "-an"];
+    const segs = [];
+    let total = 0;
 
-    // 3a) scalo la prima clip a 2.5K
-    let acc = path.join(dir, "acc0.mp4");
-    const r0 = await run(["-i", files[0], "-vf", vf1, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "19", "-threads", "4", "-an", acc]);
-    if (r0.code !== 0) return res.status(500).json({ error: "ffmpeg scale", detail: r0.err.slice(-400) });
-    let total = durs[0];
-
-    // 3b) dissolvenza incrementale: acc + clip successiva -> nuovo acc (sempre 2 soli input)
-    for (let k = 1; k < files.length; k++) {
-      const off = Math.max(0, Math.round((total - T) * 1000) / 1000);
-      const fc = "[0:v]fps=" + fps + ",settb=AVTB[a0];[1:v]" + vf1 + "[n];[a0][n]xfade=transition=fade:duration=" + T + ":offset=" + off + "[v]";
-      const next = path.join(dir, "acc" + k + ".mp4");
-      const rk = await run(["-i", acc, "-i", files[k], "-filter_complex", fc, "-map", "[v]", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "19", "-threads", "4", "-filter_complex_threads", "1", "-an", next]);
-      if (rk.code !== 0) return res.status(500).json({ error: "ffmpeg xfade " + k, detail: rk.err.slice(-400) });
-      try { await rm(acc, { force: true }); } catch (_) {}
-      acc = next; total = total + durs[k] - T;
+    // 3a) corpo della prima clip: dall'inizio fino a -T (la coda entra nella dissolvenza)
+    {
+      const d0 = Math.max(0.1, durs[0] - T);
+      const b0 = path.join(dir, "b0.mp4");
+      const r = await run(["-i", files[0], "-ss", "0", "-t", String(d0), "-vf", SC].concat(ENC, [b0]));
+      if (r.code !== 0) return res.status(500).json({ error: "ffmpeg body0", detail: r.err.slice(-400) });
+      segs.push(b0); total = d0;
     }
 
-    // 3c) passo finale: nitidezza leggera + musica con dissolvenza audio
+    // 3b) per ogni clip successiva: prima la dissolvenza con la precedente, poi il suo corpo
+    for (let k = 1; k < files.length; k++) {
+      const last = (k === files.length - 1);
+      const dur = last ? Math.max(0.1, durs[k] - T) : Math.max(0.1, durs[k] - 2 * T);
+      const s0 = Math.max(0, Math.round((durs[k - 1] - T) * 1000) / 1000);
+      const tr = path.join(dir, "t" + k + ".mp4");
+      const fc = "[0:v]" + SC + ",trim=start=" + s0 + ":end=" + durs[k - 1] + ",setpts=PTS-STARTPTS[a];[1:v]" + SC + ",trim=start=0:end=" + T + ",setpts=PTS-STARTPTS[b];[a][b]xfade=transition=fade:duration=" + T + ":offset=0[v]";
+      const rt = await run(["-i", files[k - 1], "-i", files[k], "-filter_complex", fc, "-map", "[v]"].concat(ENC, [tr]));
+      if (rt.code !== 0) return res.status(500).json({ error: "ffmpeg trans" + k, detail: rt.err.slice(-400) });
+      const bf = path.join(dir, "b" + k + ".mp4");
+      const rb = await run(["-i", files[k], "-ss", String(T), "-t", String(dur), "-vf", SC].concat(ENC, [bf]));
+      if (rb.code !== 0) return res.status(500).json({ error: "ffmpeg body" + k, detail: rb.err.slice(-400) });
+      segs.push(tr, bf); total = total + T + dur;
+    }
+
+    // 3c) concateno i segmenti SENZA ri-codifica (copy)
+    const listFile = path.join(dir, "list.txt");
+    await writeFile(listFile, segs.map(function (x) { return "file '" + x + "'"; }).join("\n"));
+    const muteFile = path.join(dir, "mute.mp4");
+    const rc = await run(["-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", muteFile]);
+    if (rc.code !== 0) return res.status(500).json({ error: "ffmpeg concat", detail: rc.err.slice(-400) });
+
+    // 3d) musica con dissolvenza audio; il VIDEO viene copiato (nessuna ri-codifica) -> out.mp4
     const fadeOut = Math.max(2, Math.min(3, Math.round(total * 0.15 * 1000) / 1000));
     const fadeIn = Math.min(1.2, Math.round(total * 0.08 * 1000) / 1000);
     const fadeAt = Math.max(0, Math.round((total - fadeOut) * 1000) / 1000);
-    const fcFinal = "[0:v]unsharp=3:3:0.5:3:3:0.0[vfinal];[1:a]volume=0.85,afade=t=in:st=0:d=" + fadeIn + ",afade=t=out:st=" + fadeAt + ":d=" + fadeOut + "[aout]";
-    const enc = await run(["-i", acc, "-stream_loop", "-1", "-i", musicFile, "-filter_complex", fcFinal, "-map", "[vfinal]", "-map", "[aout]", "-t", String(total),
-      "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "19", "-maxrate", "14M", "-bufsize", "14M", "-threads", "4", "-filter_complex_threads", "1", "-c:a", "aac", path.join(dir, "out.mp4")]);
+    const enc = await run(["-i", muteFile, "-stream_loop", "-1", "-i", musicFile,
+      "-filter_complex", "[1:a]volume=0.85,afade=t=in:st=0:d=" + fadeIn + ",afade=t=out:st=" + fadeAt + ":d=" + fadeOut + "[aout]",
+      "-map", "0:v", "-map", "[aout]", "-shortest", "-c:v", "copy", "-c:a", "aac", path.join(dir, "out.mp4")]);
     if (enc.code !== 0) return res.status(500).json({ error: "ffmpeg failed", detail: enc.err.slice(-400) });
 
     // 5) carico il risultato (1080p) nel bucket privato come l'utente
