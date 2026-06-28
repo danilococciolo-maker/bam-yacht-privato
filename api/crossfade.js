@@ -30,8 +30,11 @@ function run(args) {
     const p = spawn(ffmpegPath, args);
     let err = "";
     p.stderr.on("data", function (d) { err += d.toString(); });
-    p.on("close", function (code) { resolve({ code: code, err: err }); });
-    p.on("error", function (e) { resolve({ code: -1, err: String(e) }); });
+    p.on("close", function (code) {
+      if (code !== 0) console.log("[crossfade] ffmpeg FAIL code=" + code + " | CMD " + args.join(" ").slice(0, 260) + " | ERR " + err.slice(-420));
+      resolve({ code: code, err: err });
+    });
+    p.on("error", function (e) { console.log("[crossfade] spawn ERR " + String(e)); resolve({ code: -1, err: String(e) }); });
   });
 }
 
@@ -67,7 +70,7 @@ export default async function handler(req, res) {
   const jwt = body.jwt;
   const outPath = body.path;
 
-  console.log("[crossfade] in: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
+  console.log("[crossfade] in v2-spia: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
 
   if (!urlsRaw.length || !jwt || !outPath) {
     console.log("[crossfade] 400 missing: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
