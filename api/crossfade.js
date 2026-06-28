@@ -70,7 +70,7 @@ export default async function handler(req, res) {
   const jwt = body.jwt;
   const outPath = body.path;
 
-  console.log("[crossfade] in v11-faststart: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
+  console.log("[crossfade] in v12-join: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
 
   if (!urlsRaw.length || !jwt || !outPath) {
     console.log("[crossfade] 400 missing: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
@@ -132,7 +132,7 @@ export default async function handler(req, res) {
     //    Il marchio BAM e' gia' impresso su ogni clip da save-video.
     const SC = "fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=lanczos,pad=" + W + ":" + H + ":-1:-1,setsar=1,unsharp=5:5:0.8:5:5:0.0";
     const ENC = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "20", "-maxrate", "20M", "-bufsize", "20M", "-threads", "1", "-an"];
-    const GROUP = 10;
+    const GROUP = 5;
     let total = 0;
 
     async function videoDur(f) {
@@ -163,6 +163,26 @@ export default async function handler(req, res) {
       return await run(args.concat(["-filter_complex_threads", "1", "-filter_complex", fc, "-map", "[vout]"]).concat(ENC, [out]));
     }
 
+    // fonde i GRUPPI gia' montati (gia' a 2.5K) con dissolvenze, SENZA ri-scalare:
+    // solo dissolvenza tra un gruppo e l'altro -> niente stacco, RAM bassa (~550MB), nitidezza intatta
+    async function xfadeJoin(ins, ds, out) {
+      const args = [];
+      for (let i = 0; i < ins.length; i++) args.push("-i", ins[i]);
+      let fc = "";
+      for (let i = 0; i < ins.length; i++) fc += "[" + i + ":v]format=yuv420p[v" + i + "];";
+      let prev = "[v0]";
+      let acc = ds[0];
+      for (let i = 1; i < ins.length; i++) {
+        const off = Math.max(0, Math.round((acc - T) * 1000) / 1000);
+        const lbl = (i === ins.length - 1) ? "[vout]" : "[x" + i + "]";
+        fc += prev + "[v" + i + "]xfade=transition=fade:duration=" + T + ":offset=" + off + lbl + ";";
+        prev = lbl;
+        acc = Math.round((acc + ds[i] - T) * 1000) / 1000;
+      }
+      if (fc.charAt(fc.length - 1) === ";") fc = fc.slice(0, -1);
+      return await run(args.concat(["-filter_complex_threads", "1", "-filter_complex", fc, "-map", "[vout]"]).concat(ENC, [out]));
+    }
+
     // 3a) monto ogni gruppo di max 5 clip
     const chunkFiles = [];
     const nGroups = Math.ceil(files.length / GROUP);
@@ -179,18 +199,18 @@ export default async function handler(req, res) {
     // temporaneo di Vercel e' limitato, ~512MB)
     for (const f of files) { try { await rm(f, { force: true }); } catch (e) {} }
 
-    // 3b) unisco i gruppi per ACCOSTAMENTO diretto (niente ri-compressione): le dissolvenze
-    //     restano dentro i gruppi, tra un gruppo e l'altro c'e' un solo stacco netto. Cosi'
-    //     l'unione e' gratis e non raddoppia i tempi, e la RAM resta quella di un gruppo.
+    // 3b) FONDO i gruppi tra loro con la stessa DISSOLVENZA (xfade), non piu' con un taglio
+    //     netto: cosi' NON c'e' nessuno stacco a meta' video. I gruppi sono gia' a 2.5K, qui
+    //     non si ri-scala (solo dissolvenza) -> RAM ~550MB e nitidezza identica.
     let mergedNoMusic;
     if (chunkFiles.length === 1) {
       mergedNoMusic = chunkFiles[0];
     } else {
-      const listFile = path.join(dir, "groups.txt");
-      await writeFile(listFile, chunkFiles.map(function (f) { return "file '" + f + "'"; }).join("\n"));
+      const chunkDurs = [];
+      for (let i = 0; i < chunkFiles.length; i++) chunkDurs.push(await videoDur(chunkFiles[i]));
       mergedNoMusic = path.join(dir, "merged.mp4");
-      const r = await run(["-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", mergedNoMusic]);
-      if (r.code !== 0) return res.status(500).json({ error: "concat gruppi", detail: r.err.slice(-400) });
+      const r = await xfadeJoin(chunkFiles, chunkDurs, mergedNoMusic);
+      if (r.code !== 0) return res.status(500).json({ error: "unione gruppi", detail: r.err.slice(-400) });
       // libero i gruppi: il video unito c'e', non servono piu'
       for (const f of chunkFiles) { try { await rm(f, { force: true }); } catch (e) {} }
     }
