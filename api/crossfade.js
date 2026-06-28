@@ -70,7 +70,7 @@ export default async function handler(req, res) {
   const jwt = body.jwt;
   const outPath = body.path;
 
-  console.log("[crossfade] in v4-gruppi: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
+  console.log("[crossfade] in v5-tpad: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
 
   if (!urlsRaw.length || !jwt || !outPath) {
     console.log("[crossfade] 400 missing: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
@@ -130,7 +130,7 @@ export default async function handler(req, res) {
     //    su clip intere): e' quello che ffmpeg 7 di Vercel accetta. Per non saturare la
     //    memoria lavoro a gruppi di max 5 clip, poi fondo i gruppi tra loro allo stesso modo.
     //    Il marchio BAM e' gia' impresso su ogni clip da save-video.
-    const SC = "fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=bilinear,pad=" + W + ":" + H + ":-1:-1,setsar=1,unsharp=3:3:0.5:3:3:0.0,setpts=PTS-STARTPTS";
+    const SC = "fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=bilinear,pad=" + W + ":" + H + ":-1:-1,setsar=1,unsharp=3:3:0.5:3:3:0.0,setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=0.5";
     const ENC = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "20", "-maxrate", "14M", "-bufsize", "14M", "-an"];
     const GROUP = 5;
     let total = 0;
@@ -154,12 +154,13 @@ export default async function handler(req, res) {
       let acc = ds[0];
       for (let i = 1; i < ins.length; i++) {
         const off = Math.max(0, Math.round((acc - T) * 1000) / 1000);
-        const lbl = (i === ins.length - 1) ? "[vout]" : "[x" + i + "]";
+        const lbl = "[x" + i + "]";
         fc += prev + "[v" + i + "]xfade=transition=fade:duration=" + T + ":offset=" + off + lbl + ";";
         prev = lbl;
         acc = Math.round((acc + ds[i] - T) * 1000) / 1000;
       }
-      if (fc.charAt(fc.length - 1) === ";") fc = fc.slice(0, -1);
+      // tolgo la coda clonata (tpad) fissando la durata reale del montaggio
+      fc += prev + "trim=end=" + acc + ",setpts=PTS-STARTPTS[vout]";
       return await run(args.concat(["-filter_complex", fc, "-map", "[vout]"]).concat(ENC, [out]));
     }
 
