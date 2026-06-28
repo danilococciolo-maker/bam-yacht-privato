@@ -70,7 +70,7 @@ export default async function handler(req, res) {
   const jwt = body.jwt;
   const outPath = body.path;
 
-  console.log("[crossfade] in v3-fix: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
+  console.log("[crossfade] in v4-gruppi: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
 
   if (!urlsRaw.length || !jwt || !outPath) {
     console.log("[crossfade] 400 missing: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
@@ -126,52 +126,74 @@ export default async function handler(req, res) {
       if (i === 0 && d.fps) fps = d.fps;
     }
 
-    // 3) MONTAGGIO VELOCE: codifico SOLO il secondo di dissolvenza tra clip adiacenti e i
-    //    "corpi" delle clip, poi li attacco (concat) senza ri-codificare il filmato intero.
-    //    Ogni operazione tocca al massimo 2 clip -> RAM ~300MB (niente OOM) e ~5x meno CPU
-    //    del montaggio a coppie, che ricodificava tutto a ogni passo e andava in timeout su
-    //    1 core. Il marchio BAM e' gia' impresso su OGNI clip da save-video.
-    const SC = "fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=bilinear,pad=" + W + ":" + H + ":-1:-1,setsar=1,unsharp=3:3:0.5:3:3:0.0";
+    // 3) MONTAGGIO A GRUPPI con dissolvenze. Uso xfade nel modo STANDARD (offset crescente
+    //    su clip intere): e' quello che ffmpeg 7 di Vercel accetta. Per non saturare la
+    //    memoria lavoro a gruppi di max 5 clip, poi fondo i gruppi tra loro allo stesso modo.
+    //    Il marchio BAM e' gia' impresso su ogni clip da save-video.
+    const SC = "fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=bilinear,pad=" + W + ":" + H + ":-1:-1,setsar=1,unsharp=3:3:0.5:3:3:0.0,setpts=PTS-STARTPTS";
     const ENC = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "20", "-maxrate", "14M", "-bufsize", "14M", "-an"];
-    const segs = [];
+    const GROUP = 5;
     let total = 0;
 
-    // 3a) corpo della prima clip: dall'inizio fino a -T (la coda entra nella dissolvenza)
-    {
-      const d0 = Math.max(0.1, durs[0] - T);
-      const b0 = path.join(dir, "b0.mp4");
-      const r = await run(["-i", files[0], "-ss", "0", "-t", String(d0), "-vf", SC].concat(ENC, [b0]));
-      if (r.code !== 0) return res.status(500).json({ error: "ffmpeg body0", detail: r.err.slice(-400) });
-      segs.push(b0); total = d0;
+    async function videoDur(f) {
+      const pr = await run(["-i", f]);
+      const d = parseDurFps(pr.err);
+      return d.dur || 8;
     }
 
-    // 3b) per ogni clip successiva: prima la dissolvenza con la precedente, poi il suo corpo
-    for (let k = 1; k < files.length; k++) {
-      const last = (k === files.length - 1);
-      const dur = last ? Math.max(0.1, durs[k] - T) : Math.max(0.1, durs[k] - 2 * T);
-      const s0 = Math.max(0, Math.round((durs[k - 1] - T) * 1000) / 1000);
-      const tr = path.join(dir, "t" + k + ".mp4");
-      const fc = "[0:v]" + SC + ",trim=start=" + s0 + ",setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=0.5[a];[1:v]" + SC + ",trim=start=0:end=1.5,setpts=PTS-STARTPTS[b];[a][b]xfade=transition=fade:duration=" + T + ":offset=0,trim=end=" + T + ",setpts=PTS-STARTPTS[v]";
-      const rt = await run(["-i", files[k - 1], "-i", files[k], "-filter_complex", fc, "-map", "[v]"].concat(ENC, [tr]));
-      if (rt.code !== 0) return res.status(500).json({ error: "ffmpeg trans" + k, detail: rt.err.slice(-400) });
-      const bf = path.join(dir, "b" + k + ".mp4");
-      const rb = await run(["-i", files[k], "-ss", String(T), "-t", String(dur), "-vf", SC].concat(ENC, [bf]));
-      if (rb.code !== 0) return res.status(500).json({ error: "ffmpeg body" + k, detail: rb.err.slice(-400) });
-      segs.push(tr, bf); total = total + T + dur;
+    // fonde una lista di clip con dissolvenze (xfade chain, offset crescente)
+    async function xfadeChain(ins, ds, out) {
+      if (ins.length === 1) {
+        return await run(["-i", ins[0], "-vf", SC].concat(ENC, [out]));
+      }
+      const args = [];
+      for (let i = 0; i < ins.length; i++) args.push("-i", ins[i]);
+      let fc = "";
+      for (let i = 0; i < ins.length; i++) fc += "[" + i + ":v]" + SC + "[v" + i + "];";
+      let prev = "[v0]";
+      let acc = ds[0];
+      for (let i = 1; i < ins.length; i++) {
+        const off = Math.max(0, Math.round((acc - T) * 1000) / 1000);
+        const lbl = (i === ins.length - 1) ? "[vout]" : "[x" + i + "]";
+        fc += prev + "[v" + i + "]xfade=transition=fade:duration=" + T + ":offset=" + off + lbl + ";";
+        prev = lbl;
+        acc = Math.round((acc + ds[i] - T) * 1000) / 1000;
+      }
+      if (fc.charAt(fc.length - 1) === ";") fc = fc.slice(0, -1);
+      return await run(args.concat(["-filter_complex", fc, "-map", "[vout]"]).concat(ENC, [out]));
     }
 
-    // 3c) concateno i segmenti SENZA ri-codifica (copy)
-    const listFile = path.join(dir, "list.txt");
-    await writeFile(listFile, segs.map(function (x) { return "file '" + x + "'"; }).join("\n"));
-    const muteFile = path.join(dir, "mute.mp4");
-    const rc = await run(["-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", muteFile]);
-    if (rc.code !== 0) return res.status(500).json({ error: "ffmpeg concat", detail: rc.err.slice(-400) });
+    // 3a) monto ogni gruppo di max 5 clip
+    const chunkFiles = [];
+    const nGroups = Math.ceil(files.length / GROUP);
+    for (let gi = 0; gi < nGroups; gi++) {
+      const gf = files.slice(gi * GROUP, gi * GROUP + GROUP);
+      const gd = durs.slice(gi * GROUP, gi * GROUP + GROUP);
+      const cf = path.join(dir, "g" + gi + ".mp4");
+      const r = await xfadeChain(gf, gd, cf);
+      if (r.code !== 0) return res.status(500).json({ error: "ffmpeg gruppo" + gi, detail: r.err.slice(-400) });
+      chunkFiles.push(cf);
+    }
 
-    // 3d) musica con dissolvenza audio; il VIDEO viene copiato (nessuna ri-codifica) -> out.mp4
+    // 3b) fondo i gruppi tra loro (stesso metodo)
+    let mergedNoMusic;
+    if (chunkFiles.length === 1) {
+      mergedNoMusic = chunkFiles[0];
+    } else {
+      const cds = [];
+      for (let i = 0; i < chunkFiles.length; i++) cds.push(await videoDur(chunkFiles[i]));
+      mergedNoMusic = path.join(dir, "merged.mp4");
+      const r = await xfadeChain(chunkFiles, cds, mergedNoMusic);
+      if (r.code !== 0) return res.status(500).json({ error: "ffmpeg unione gruppi", detail: r.err.slice(-400) });
+    }
+
+    total = await videoDur(mergedNoMusic);
+
+    // 3c) musica con dissolvenza audio; il VIDEO viene copiato (niente ri-codifica) -> out.mp4
     const fadeOut = Math.max(2, Math.min(3, Math.round(total * 0.15 * 1000) / 1000));
     const fadeIn = Math.min(1.2, Math.round(total * 0.08 * 1000) / 1000);
     const fadeAt = Math.max(0, Math.round((total - fadeOut) * 1000) / 1000);
-    const enc = await run(["-i", muteFile, "-stream_loop", "-1", "-i", musicFile,
+    const enc = await run(["-i", mergedNoMusic, "-stream_loop", "-1", "-i", musicFile,
       "-filter_complex", "[1:a]volume=0.85,afade=t=in:st=0:d=" + fadeIn + ",afade=t=out:st=" + fadeAt + ":d=" + fadeOut + "[aout]",
       "-map", "0:v", "-map", "[aout]", "-shortest", "-c:v", "copy", "-c:a", "aac", path.join(dir, "out.mp4")]);
     if (enc.code !== 0) return res.status(500).json({ error: "ffmpeg failed", detail: enc.err.slice(-400) });
