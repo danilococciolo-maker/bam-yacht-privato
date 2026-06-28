@@ -70,7 +70,7 @@ export default async function handler(req, res) {
   const jwt = body.jwt;
   const outPath = body.path;
 
-  console.log("[crossfade] in v13-1080: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
+  console.log("[crossfade] in v14-apple: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
 
   if (!urlsRaw.length || !jwt || !outPath) {
     console.log("[crossfade] 400 missing: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
@@ -130,9 +130,9 @@ export default async function handler(req, res) {
     //    su clip intere): e' quello che ffmpeg 7 di Vercel accetta. Per non saturare la
     //    memoria lavoro a gruppi di max 10 clip, poi fondo i gruppi tra loro allo stesso modo.
     //    Il marchio BAM e' gia' impresso su ogni clip da save-video.
-    const SC = "fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=lanczos,pad=" + W + ":" + H + ":-1:-1,setsar=1,unsharp=5:5:0.8:5:5:0.0";
-    const ENC = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "20", "-maxrate", "10M", "-bufsize", "10M", "-threads", "1", "-an"];
-    const GROUP = 5;
+    const SC = "fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=bilinear,pad=" + W + ":" + H + ":-1:-1,setsar=1";
+    const ENC = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "superfast", "-crf", "20", "-maxrate", "16M", "-bufsize", "32M", "-threads", "4", "-an"];
+    const GROUP = 10;
     let total = 0;
 
     async function videoDur(f) {
