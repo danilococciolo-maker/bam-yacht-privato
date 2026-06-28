@@ -70,7 +70,7 @@ export default async function handler(req, res) {
   const jwt = body.jwt;
   const outPath = body.path;
 
-  console.log("[crossfade] in v9-disk: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
+  console.log("[crossfade] in v11-faststart: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
 
   if (!urlsRaw.length || !jwt || !outPath) {
     console.log("[crossfade] 400 missing: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
@@ -128,11 +128,11 @@ export default async function handler(req, res) {
 
     // 3) MONTAGGIO A GRUPPI con dissolvenze. Uso xfade nel modo STANDARD (offset crescente
     //    su clip intere): e' quello che ffmpeg 7 di Vercel accetta. Per non saturare la
-    //    memoria lavoro a gruppi di max 5 clip, poi fondo i gruppi tra loro allo stesso modo.
+    //    memoria lavoro a gruppi di max 10 clip, poi fondo i gruppi tra loro allo stesso modo.
     //    Il marchio BAM e' gia' impresso su ogni clip da save-video.
     const SC = "fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=lanczos,pad=" + W + ":" + H + ":-1:-1,setsar=1,unsharp=5:5:0.8:5:5:0.0";
-    const ENC = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "20", "-maxrate", "20M", "-bufsize", "20M", "-an"];
-    const GROUP = 5;
+    const ENC = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "20", "-maxrate", "20M", "-bufsize", "20M", "-threads", "1", "-an"];
+    const GROUP = 10;
     let total = 0;
 
     async function videoDur(f) {
@@ -160,7 +160,7 @@ export default async function handler(req, res) {
         acc = Math.round((acc + ds[i] - T) * 1000) / 1000;
       }
       if (fc.charAt(fc.length - 1) === ";") fc = fc.slice(0, -1);
-      return await run(args.concat(["-filter_complex", fc, "-map", "[vout]"]).concat(ENC, [out]));
+      return await run(args.concat(["-filter_complex_threads", "1", "-filter_complex", fc, "-map", "[vout]"]).concat(ENC, [out]));
     }
 
     // 3a) monto ogni gruppo di max 5 clip
@@ -203,7 +203,7 @@ export default async function handler(req, res) {
     const fadeAt = Math.max(0, Math.round((total - fadeOut) * 1000) / 1000);
     const enc = await run(["-i", mergedNoMusic, "-stream_loop", "-1", "-i", musicFile,
       "-filter_complex", "[1:a]volume=0.85,afade=t=in:st=0:d=" + fadeIn + ",afade=t=out:st=" + fadeAt + ":d=" + fadeOut + "[aout]",
-      "-map", "0:v", "-map", "[aout]", "-shortest", "-c:v", "copy", "-c:a", "aac", path.join(dir, "out.mp4")]);
+      "-map", "0:v", "-map", "[aout]", "-shortest", "-c:v", "copy", "-c:a", "aac", "-movflags", "+faststart", path.join(dir, "out.mp4")]);
     if (enc.code !== 0) return res.status(500).json({ error: "ffmpeg failed", detail: enc.err.slice(-400) });
 
     // 5) carico il risultato (1080p) nel bucket privato come l'utente
