@@ -70,7 +70,7 @@ export default async function handler(req, res) {
   const jwt = body.jwt;
   const outPath = body.path;
 
-  console.log("[crossfade] in v7-fast: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
+  console.log("[crossfade] in v8-groups: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
 
   if (!urlsRaw.length || !jwt || !outPath) {
     console.log("[crossfade] 400 missing: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
@@ -128,11 +128,11 @@ export default async function handler(req, res) {
 
     // 3) MONTAGGIO A GRUPPI con dissolvenze. Uso xfade nel modo STANDARD (offset crescente
     //    su clip intere): e' quello che ffmpeg 7 di Vercel accetta. Per non saturare la
-    //    memoria lavoro a gruppi di max 10 clip, poi fondo i gruppi tra loro allo stesso modo.
+    //    memoria lavoro a gruppi di max 5 clip, poi fondo i gruppi tra loro allo stesso modo.
     //    Il marchio BAM e' gia' impresso su ogni clip da save-video.
     const SC = "fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=lanczos,pad=" + W + ":" + H + ":-1:-1,setsar=1,unsharp=5:5:0.8:5:5:0.0";
     const ENC = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "20", "-maxrate", "20M", "-bufsize", "20M", "-an"];
-    const GROUP = 10;
+    const GROUP = 5;
     let total = 0;
 
     async function videoDur(f) {
@@ -175,16 +175,18 @@ export default async function handler(req, res) {
       chunkFiles.push(cf);
     }
 
-    // 3b) fondo i gruppi tra loro (stesso metodo)
+    // 3b) unisco i gruppi per ACCOSTAMENTO diretto (niente ri-compressione): le dissolvenze
+    //     restano dentro i gruppi, tra un gruppo e l'altro c'e' un solo stacco netto. Cosi'
+    //     l'unione e' gratis e non raddoppia i tempi, e la RAM resta quella di un gruppo.
     let mergedNoMusic;
     if (chunkFiles.length === 1) {
       mergedNoMusic = chunkFiles[0];
     } else {
-      const cds = [];
-      for (let i = 0; i < chunkFiles.length; i++) cds.push(await videoDur(chunkFiles[i]));
+      const listFile = path.join(dir, "groups.txt");
+      await writeFile(listFile, chunkFiles.map(function (f) { return "file '" + f + "'"; }).join("\n"));
       mergedNoMusic = path.join(dir, "merged.mp4");
-      const r = await xfadeChain(chunkFiles, cds, mergedNoMusic);
-      if (r.code !== 0) return res.status(500).json({ error: "ffmpeg unione gruppi", detail: r.err.slice(-400) });
+      const r = await run(["-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", mergedNoMusic]);
+      if (r.code !== 0) return res.status(500).json({ error: "concat gruppi", detail: r.err.slice(-400) });
     }
 
     total = await videoDur(mergedNoMusic);
