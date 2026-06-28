@@ -123,35 +123,36 @@ export default async function handler(req, res) {
       if (i === 0 && d.fps) fps = d.fps;
     }
 
-    // 3) filtro: normalizzo+upscale morbido a 1080p, catena di dissolvenze, musica, marchio BAM
-    const parts = [];
-    for (let k = 0; k < files.length; k++) {
-      parts.push("[" + k + ":v]fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=bilinear,pad=" + W + ":" + H + ":-1:-1,setsar=1,settb=AVTB[n" + k + "]");
-    }
-    let label = "n0", total = durs[0];
+    // 3) MONTAGGIO A COPPIE su disco: due clip per volta. La RAM resta ~350MB e NON dipende
+    //    dal numero di clip (niente OOM su Vercel, dove il filtro unico apriva tutte le clip
+    //    insieme e finiva la memoria). Ogni passo aggiunge una clip con una dissolvenza.
+    //    Il marchio BAM e' gia' impresso su OGNI clip da save-video: qui NON lo ristampo.
+    const vf1 = "fps=" + fps + ",format=yuv420p,scale=" + W + ":" + H + ":force_original_aspect_ratio=decrease:flags=bilinear,pad=" + W + ":" + H + ":-1:-1,setsar=1,settb=AVTB";
+
+    // 3a) scalo la prima clip a 2.5K
+    let acc = path.join(dir, "acc0.mp4");
+    const r0 = await run(["-i", files[0], "-vf", vf1, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "19", "-threads", "4", "-an", acc]);
+    if (r0.code !== 0) return res.status(500).json({ error: "ffmpeg scale", detail: r0.err.slice(-400) });
+    let total = durs[0];
+
+    // 3b) dissolvenza incrementale: acc + clip successiva -> nuovo acc (sempre 2 soli input)
     for (let k = 1; k < files.length; k++) {
       const off = Math.max(0, Math.round((total - T) * 1000) / 1000);
-      const out = (k === files.length - 1) ? "vout" : ("v" + k);
-      parts.push("[" + label + "][n" + k + "]xfade=transition=fade:duration=" + T + ":offset=" + off + "[" + out + "]");
-      label = out; total = total + durs[k] - T;
+      const fc = "[0:v]fps=" + fps + ",settb=AVTB[a0];[1:v]" + vf1 + "[n];[a0][n]xfade=transition=fade:duration=" + T + ":offset=" + off + "[v]";
+      const next = path.join(dir, "acc" + k + ".mp4");
+      const rk = await run(["-i", acc, "-i", files[k], "-filter_complex", fc, "-map", "[v]", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "19", "-threads", "4", "-filter_complex_threads", "1", "-an", next]);
+      if (rk.code !== 0) return res.status(500).json({ error: "ffmpeg xfade " + k, detail: rk.err.slice(-400) });
+      try { await rm(acc, { force: true }); } catch (_) {}
+      acc = next; total = total + durs[k] - T;
     }
+
+    // 3c) passo finale: nitidezza leggera + musica con dissolvenza audio
     const fadeOut = Math.max(2, Math.min(3, Math.round(total * 0.15 * 1000) / 1000));
     const fadeIn = Math.min(1.2, Math.round(total * 0.08 * 1000) / 1000);
     const fadeAt = Math.max(0, Math.round((total - fadeOut) * 1000) / 1000);
-    const musicIdx = files.length;
-    parts.push("[" + musicIdx + ":a]volume=0.85,afade=t=in:st=0:d=" + fadeIn + ",afade=t=out:st=" + fadeAt + ":d=" + fadeOut + "[aout]");
-    parts.push("[vout]unsharp=3:3:0.5:3:3:0.0[vfinal]");
-    // nitidezza leggera. Il marchio BAM e' gia' impresso su OGNI clip da save-video:
-    // qui NON lo ristampo, cosi' niente doppio timbro / fondo nero.
-    const fc = parts.join(";");
-
-    // 4) eseguo ffmpeg
-    const args = [];
-    for (let i = 0; i < files.length; i++) args.push("-i", files[i]);
-    args.push("-stream_loop", "-1", "-i", musicFile, "-filter_complex", fc, "-map", "[vfinal]", "-map", "[aout]", "-t", String(total),
-      "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "19", "-maxrate", "14M", "-bufsize", "14M", "-threads", "4", "-filter_complex_threads", "1",
-      "-c:a", "aac", path.join(dir, "out.mp4"));
-    const enc = await run(args);
+    const fcFinal = "[0:v]unsharp=3:3:0.5:3:3:0.0[vfinal];[1:a]volume=0.85,afade=t=in:st=0:d=" + fadeIn + ",afade=t=out:st=" + fadeAt + ":d=" + fadeOut + "[aout]";
+    const enc = await run(["-i", acc, "-stream_loop", "-1", "-i", musicFile, "-filter_complex", fcFinal, "-map", "[vfinal]", "-map", "[aout]", "-t", String(total),
+      "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast", "-crf", "19", "-maxrate", "14M", "-bufsize", "14M", "-threads", "4", "-filter_complex_threads", "1", "-c:a", "aac", path.join(dir, "out.mp4")]);
     if (enc.code !== 0) return res.status(500).json({ error: "ffmpeg failed", detail: enc.err.slice(-400) });
 
     // 5) carico il risultato (1080p) nel bucket privato come l'utente
