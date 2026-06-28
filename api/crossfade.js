@@ -70,7 +70,7 @@ export default async function handler(req, res) {
   const jwt = body.jwt;
   const outPath = body.path;
 
-  console.log("[crossfade] in v8-groups: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
+  console.log("[crossfade] in v9-disk: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
 
   if (!urlsRaw.length || !jwt || !outPath) {
     console.log("[crossfade] 400 missing: urls=" + urlsRaw.length + " jwt=" + (!!jwt) + " path=" + (!!outPath));
@@ -175,6 +175,10 @@ export default async function handler(req, res) {
       chunkFiles.push(cf);
     }
 
+    // libero le clip scaricate: i gruppi sono pronti, non servono piu' (lo spazio disco
+    // temporaneo di Vercel e' limitato, ~512MB)
+    for (const f of files) { try { await rm(f, { force: true }); } catch (e) {} }
+
     // 3b) unisco i gruppi per ACCOSTAMENTO diretto (niente ri-compressione): le dissolvenze
     //     restano dentro i gruppi, tra un gruppo e l'altro c'e' un solo stacco netto. Cosi'
     //     l'unione e' gratis e non raddoppia i tempi, e la RAM resta quella di un gruppo.
@@ -187,6 +191,8 @@ export default async function handler(req, res) {
       mergedNoMusic = path.join(dir, "merged.mp4");
       const r = await run(["-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", mergedNoMusic]);
       if (r.code !== 0) return res.status(500).json({ error: "concat gruppi", detail: r.err.slice(-400) });
+      // libero i gruppi: il video unito c'e', non servono piu'
+      for (const f of chunkFiles) { try { await rm(f, { force: true }); } catch (e) {} }
     }
 
     total = await videoDur(mergedNoMusic);
