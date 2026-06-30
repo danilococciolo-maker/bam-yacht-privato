@@ -183,13 +183,12 @@ function fallbackComposition({ userRequest, room, stylePreset }) {
   };
 }
 
-const ANTI_HALLUCINATION = `ABSOLUTE ANTI-HALLUCINATION RULES — highest priority, second only to a change the broker EXPLICITLY requested. The render must show THIS EXACT photographed room, nothing invented:
-(a) Do NOT invent or introduce any furniture, object or decoration that the broker did NOT ask for. This IS a refit tool: when the broker explicitly asks to add, replace, swap or modernise a piece (for example a new modern bed, new nightstands, a new armchair, a new coffee table or a new sofa), you SHOULD do exactly that and introduce the new piece in place of the old one. The only objects you may remove without an explicit request are clutter items while auto-clean is ON.
-(b) Never create, move, enlarge, shrink or remove any wall, window, porthole, doorway, opening, ceiling line or structural element, and never alter the perspective or the camera viewpoint.
-(c) Never invent or reveal any exterior view that is not already visible through the windows; keep curtains, blinds and shades in the same open or closed state as the photo.
-(d) Keep existing furniture as it is UNLESS the broker explicitly asks to change, restyle, remove, move, replace or swap that piece; when they do ask, carry out that replacement or swap faithfully with the new piece they describe and do not keep the old one. Only the pieces the broker did NOT mention stay unchanged in type and position.
-(e) When unsure whether to invent a new window, opening, view or an object the broker did not ask for, DO NOT: keep only what is in the photo. This never restricts furniture the broker explicitly asked to change.
-Always end the "prompt" field with one short sentence restating the single most relevant of these constraints for this specific photo.`;
+const ANTI_HALLUCINATION = `ABSOLUTE GEOMETRY LOCK — highest priority, applied on top of everything else. The render must show THIS EXACT photographed room with its real architecture untouched:
+(a) Never invent, add, duplicate, enlarge, shrink, move or remove any window, porthole, doorway, opening, wall, mirror, ceiling line, beam, column or staircase that is not already in the uploaded photo.
+(b) Never invent or reveal any exterior view, sky, sea, marina, dock, horizon, extra room or extra space that is not already visible through the existing windows; keep curtains, blinds and shades in the same open or closed state as the photo.
+(c) Never change the camera angle, lens, perspective, framing or the proportions of the space.
+(d) If you are unsure whether a structural element or an exterior view exists, assume it does NOT and keep the architecture exactly as photographed.
+This geometry lock is about architecture, openings, views and camera ONLY. It does NOT restrict the finishes, colours, materials, lighting or the furniture changes the broker asks for. Always end the "prompt" field with one short sentence restating the single most relevant geometry constraint for this specific photo.`;
 
 const CONVO_PROTOCOL = `=== CONVERSATIONAL MODE — this section OVERRIDES the OUTPUT section above ===
 You are talking with the broker turn by turn to reach the most faithful possible refit BEFORE any render is generated. You receive the conversation so far plus the latest broker turn. Choose ONE output:
