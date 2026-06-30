@@ -230,6 +230,7 @@ const PRESETS = [
 
 
 const MODEL_ENDPOINT = "/v1/models/black-forest-labs/flux-kontext-max/predictions";
+const CANNY_ENDPOINT = "/v1/models/black-forest-labs/flux-canny-dev/predictions";
 const UPSCALE_ENDPOINT = "/v1/models/topazlabs/image-upscale/predictions";
 const SEG_MODEL_ENDPOINT = "/v1/models/schananas/grounded_sam";
 const PREDICTIONS_ENDPOINT = "/v1/predictions";
@@ -1384,7 +1385,10 @@ function BAMYachtApp() {
       // Flux Kontext Max: parametri DIVERSI da nano-banana.
       // Campo immagine = input_image (singolare). Flux lavora sui pixel veri = blocca la geometria.
       async function runFlux(prompt, baseImage) {
-        let p = await replicateCreate(MODEL_ENDPOINT, token, { input: { prompt: prompt, input_image: baseImage, aspect_ratio: "match_input_image", output_format: "jpg" } });
+        // MOTORE BASE = flux-canny-dev: blocca i BORDI (contorni di finestre, muri, mobili)
+        // tramite control_image, cosi la geometria non si deforma. megapixels match_input
+        // mantiene la misura della foto. nano resta sopra come prima.
+        let p = await replicateCreate(CANNY_ENDPOINT, token, { input: { prompt: prompt, control_image: baseImage, megapixels: "match_input" } });
         p = await replicatePoll(p, token, 90);
         return Array.isArray(p.output) ? p.output[0] : p.output;
       }
