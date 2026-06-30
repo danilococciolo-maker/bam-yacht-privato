@@ -1388,6 +1388,13 @@ function BAMYachtApp() {
         p = await replicatePoll(p, token, 90);
         return Array.isArray(p.output) ? p.output[0] : p.output;
       }
+      // INPAINTING Flux Fill: rigenera SOLO la zona dentro la maschera (bianco = da rifare),
+      // copiando tutto il resto identico fuori maschera. Stesso schema di Kontext.
+      async function runFill(imageUrl, maskUrl, prompt) {
+        let p = await replicateCreate(FILL_ENDPOINT, token, { input: { image: imageUrl, mask: maskUrl, prompt: prompt } });
+        p = await replicatePoll(p, token, 90);
+        return Array.isArray(p.output) ? p.output[0] : p.output;
+      }
       // Solo nano-banana (rifinitura/fallback), prova principale + fallback.
       function runNano(prompt, baseImage) {
         return runEdit(EDIT_ENDPOINT, prompt, baseImage)
@@ -1402,23 +1409,26 @@ function BAMYachtApp() {
         try { fluxOut = await runFlux(prompt, baseImage); } catch (_) { fluxOut = null; }
         // Se Flux non risponde, ripiego: nano-banana direttamente sulla foto originale.
         if (!fluxOut) return await runNano(prompt, baseImage);
-        // Passo 2: se ho un'istruzione di sostituzione (nanoPrompt) la uso per cambiare
-        // DAVVERO i pezzi richiesti; altrimenti nano-banana si limita a rifinire.
-        const polished = await runNano(nanoPrompt || NANO_POLISH, fluxOut);
-        if (!polished || polished === fluxOut) return fluxOut;
-        // STRUTTURA BLOCCATA: se nano ha SOSTITUITO i mobili (nanoPrompt presente), tengo i
-        // mobili nuovi di nano ma RIPRISTINO muri/soffitto/FINESTRE dal passaggio Kontext,
-        // che e' fedele alla geometria. Cosi la finestra non passa mai da nano: niente
-        // spostamento, il lucchetto incolla pulito e Topaz non ha cuciture da friggere.
-        if (!nanoPrompt) return polished;
+        // Nessuna sostituzione mobili richiesta: nano-banana rifinisce e basta (museruola).
+        if (!nanoPrompt) {
+          const polished = await runNano(NANO_POLISH, fluxOut);
+          return polished || fluxOut;
+        }
+        // SOSTITUZIONE MOBILI VIA INPAINTING (Flux Fill): rigenero SOLO la zona dei mobili
+        // dentro una maschera. Tutto il resto - muri, soffitto, FINESTRE, inquadratura -
+        // resta i pixel di Kontext identici, copiati fuori dalla maschera. L'inquadratura
+        // non puo' spostarsi: niente finestra fusa, niente divano doppio.
         try {
-          const fmask = await segmentImage(polished, FURNITURE_MASK_PROMPT);
+          const fmask = await segmentImage(fluxOut, FURNITURE_MASK_PROMPT);
           if (fmask) {
-            const locked = await compositeReplace(fluxOut, polished, fmask);
-            if (locked) return locked;
+            const filled = await runFill(fluxOut, fmask, nanoPrompt);
+            if (filled) return filled;
           }
         } catch (_) {}
-        return polished;
+        // Rete di sicurezza: se l'inpainting non risponde, torno alla rifinitura nano
+        // (comportamento precedente), cosi non si rompe nulla.
+        const polished = await runNano(nanoPrompt, fluxOut);
+        return polished || fluxOut;
       }
 
       // Schema CHIARO richiesto su parete/intero ambiente? Allora conviene un passaggio
@@ -1527,11 +1537,7 @@ function BAMYachtApp() {
           }
           if (upscale.status === "succeeded") {
             const rawUrl = Array.isArray(upscale.output) ? upscale.output[0] : upscale.output;
-            // RIPRISTINO-FINESTRA FINALE: dopo Topaz reincollo la finestra ORIGINALE pulita
-            // alla risoluzione piena, cosi l'upscaler non puo' piu' friggere vetro e vista.
-            let postUrl = rawUrl;
-            try { if (windowMaskUrl) { const wl = await compositeWindowsHiRes(rawUrl, img, windowMaskUrl); if (wl) postUrl = wl; } } catch (_) {}
-            const finalUrl = await matchAspect(postUrl, img);
+            const finalUrl = await matchAspect(rawUrl, img);
             setResult(finalUrl);
             urlToDataUri(finalUrl).then(setResultB64).catch(() => {});
             saveJob({ status: "done", resultUrl: finalUrl });
