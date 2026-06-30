@@ -441,6 +441,76 @@ function compositeReplace(baseUrl, srcUrl, maskUrl) {
   });
 }
 
+// Come compositeWindows, ma il canvas e' alla risoluzione del RENDER (es. il 6x di Topaz):
+// reincolla la finestra ORIGINALE scalata in su, cosi la posso applicare DOPO Topaz e la
+// vista/vetro non vengono mai fritti dall'upscaler. Stessa euristica vista-esterna.
+function compositeWindowsHiRes(renderUrl, refDataUri, maskUrl) {
+  return new Promise((resolve) => {
+    const render = new Image(); render.crossOrigin = "anonymous";
+    render.onload = () => {
+      const w = render.naturalWidth || render.width;
+      const h = render.naturalHeight || render.height;
+      const ref = new Image(); ref.crossOrigin = "anonymous";
+      ref.onload = () => {
+        const mask = new Image(); mask.crossOrigin = "anonymous";
+        mask.onload = () => {
+          try {
+            const out = document.createElement("canvas");
+            out.width = w; out.height = h;
+            const octx = out.getContext("2d");
+            octx.drawImage(render, 0, 0, w, h);
+            const rc = document.createElement("canvas");
+            rc.width = w; rc.height = h;
+            const rcx = rc.getContext("2d");
+            rcx.imageSmoothingEnabled = true; rcx.imageSmoothingQuality = "high";
+            rcx.drawImage(ref, 0, 0, w, h);
+            const rd = rcx.getImageData(0, 0, w, h).data;
+            const ma = document.createElement("canvas");
+            ma.width = w; ma.height = h;
+            const mctx = ma.getContext("2d");
+            mctx.imageSmoothingEnabled = true; mctx.imageSmoothingQuality = "high";
+            mctx.drawImage(mask, 0, 0, w, h);
+            const md = mctx.getImageData(0, 0, w, h);
+            const mp = md.data;
+            let locked = 0;
+            for (let i = 0; i < mp.length; i += 4) {
+              const mlum = (mp[i] + mp[i + 1] + mp[i + 2]) / 3;
+              let a = 0;
+              if (mlum > 110) {
+                const R = rd[i], G = rd[i + 1], B = rd[i + 2];
+                const lum = (R + G + B) / 3;
+                const warm = (R - B) > 16 && R >= G;
+                const cool = (B - R) > -6;
+                const veryBright = lum > 150;
+                const exterior = veryBright || (cool && lum > 60);
+                if (exterior && !warm) { a = 255; locked++; }
+              }
+              mp[i] = 255; mp[i + 1] = 255; mp[i + 2] = 255; mp[i + 3] = a;
+            }
+            if (locked < (w * h) * 0.0008) { resolve(renderUrl); return; }
+            mctx.putImageData(md, 0, 0);
+            const win = document.createElement("canvas");
+            win.width = w; win.height = h;
+            const wctx = win.getContext("2d");
+            wctx.imageSmoothingEnabled = true; wctx.imageSmoothingQuality = "high";
+            wctx.drawImage(ref, 0, 0, w, h);
+            wctx.globalCompositeOperation = "destination-in";
+            wctx.drawImage(ma, 0, 0);
+            octx.drawImage(win, 0, 0);
+            resolve(out.toDataURL("image/jpeg", 0.95));
+          } catch (e) { resolve(renderUrl); }
+        };
+        mask.onerror = () => resolve(renderUrl);
+        mask.src = maskUrl;
+      };
+      ref.onerror = () => resolve(renderUrl);
+      ref.src = refDataUri;
+    };
+    render.onerror = () => resolve(renderUrl);
+    render.src = renderUrl;
+  });
+}
+
 function compositeWindows(renderUrl, refDataUri, maskUrl) {
   return new Promise((resolve) => {
     const ref = new Image(); ref.crossOrigin = "anonymous";
@@ -1457,7 +1527,11 @@ function BAMYachtApp() {
           }
           if (upscale.status === "succeeded") {
             const rawUrl = Array.isArray(upscale.output) ? upscale.output[0] : upscale.output;
-            const finalUrl = await matchAspect(rawUrl, img);
+            // RIPRISTINO-FINESTRA FINALE: dopo Topaz reincollo la finestra ORIGINALE pulita
+            // alla risoluzione piena, cosi l'upscaler non puo' piu' friggere vetro e vista.
+            let postUrl = rawUrl;
+            try { if (windowMaskUrl) { const wl = await compositeWindowsHiRes(rawUrl, img, windowMaskUrl); if (wl) postUrl = wl; } } catch (_) {}
+            const finalUrl = await matchAspect(postUrl, img);
             setResult(finalUrl);
             urlToDataUri(finalUrl).then(setResultB64).catch(() => {});
             saveJob({ status: "done", resultUrl: finalUrl });
