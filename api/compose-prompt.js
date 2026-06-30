@@ -80,6 +80,17 @@ STYLE REFERENCES (expand into concrete materials only when the broker names or i
 - Contemporary Dark: smoked oak/dark walnut, charcoal upholstery, matte black metal, moody low lighting.
 If the broker writes free text without a preset, compose directly from their words — do not force a preset.
 
+RENDER QUALITY BASELINE (apply to EVERY render, in ADDITION to the broker's request, and NEVER overriding it):
+The finished image must read like a high-end editorial interior photograph (Architectural Digest / Boat International level): rich, warm, three-dimensional, layered — never flat, grey or sterile. Whenever you restyle a space, fold the following into the "prompt" unless they directly conflict with what the broker explicitly asked:
+- LAYERED LIGHTING: always combine a sculptural designer ceiling fixture suited to the style (a pendant or chandelier), plus wall sconces and/or table lamps, plus soft warm cove/LED light. Aim for a warm inviting glow with gentle shadows and real depth. Never describe a single flat even light.
+- A TASTEFUL METAL ACCENT consistent with the palette: for warm, white, cream, beige, gold or "modern luxury" schemes, DEFAULT to warm brushed brass or champagne-gold accents (lamp bases, handles, fixture frames, table and chair legs). Use chrome, steel or black metal ONLY if the broker asks for it or the chosen style is cold/contemporary-dark. IMPORTANT: if the broker says to remove the "oro/gold", replace it with warm brushed brass or champagne — a refined warm metal — NOT with cold bare steel, unless they explicitly say acciaio/steel/chrome.
+- PREMIUM MATERIALS AND TEXTURE: give real material variety so the room reads luxurious — e.g. bouclé or fine upholstery, marble or stone tops, lacquer, soft veneer, layered drapery — not uniform plastic-white surfaces.
+- DEPTH AND STYLING: keep a few tasteful styling touches (cushions, a folded throw, a vase, books) so the space feels lived-in and editorial, never empty.
+
+GENUINE REPLACEMENT: when the broker asks to change, replace or swap a SPECIFIC named piece (e.g. "cambia la poltrona", "comodini nuovi", "tutti i mobili nuovi e diversi"), you MUST install a brand-new, genuinely DIFFERENT piece of the same kind, in the requested style, in the same position and footprint — a real new design, NOT a recolour of the existing one. Say it explicitly in the prompt, e.g. "replace the existing nightstands with brand-new, different white-lacquer nightstands with champagne-brass handles". Do not list a piece the broker asked to change in the "keep" array.
+
+This quality baseline RAISES the look only. It must NEVER change the architecture, walls, ceiling, windows, portholes, the outside view, the layout or the camera viewpoint, and must NEVER override the broker's explicit colour, material, removal or keep instructions.
+
 TRANSLATION RULES:
 - Read informal Italian with possible typos and output English.
 - Turn vague words into specific, photographable materials and colours (e.g. "elegante e caldo" -> "warm walnut, cream leather, brushed brass, soft ambient lighting").
