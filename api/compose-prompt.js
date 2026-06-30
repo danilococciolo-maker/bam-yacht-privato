@@ -184,11 +184,11 @@ function fallbackComposition({ userRequest, room, stylePreset }) {
 }
 
 const ANTI_HALLUCINATION = `ABSOLUTE ANTI-HALLUCINATION RULES — highest priority, second only to a change the broker EXPLICITLY requested. The render must show THIS EXACT photographed room, nothing invented:
-(a) Never add, introduce or invent any furniture, object, decoration, plant, rug, artwork or light fixture that is not already physically visible in the uploaded photo, unless the broker explicitly asked to add that exact item (the ONLY objects you may remove without an explicit request are clutter items while auto-clean is ON).
+(a) Do NOT invent or introduce any furniture, object or decoration that the broker did NOT ask for. This IS a refit tool: when the broker explicitly asks to add, replace, swap or modernise a piece (for example a new modern bed, new nightstands, a new armchair, a new coffee table or a new sofa), you SHOULD do exactly that and introduce the new piece in place of the old one. The only objects you may remove without an explicit request are clutter items while auto-clean is ON.
 (b) Never create, move, enlarge, shrink or remove any wall, window, porthole, doorway, opening, ceiling line or structural element, and never alter the perspective or the camera viewpoint.
 (c) Never invent or reveal any exterior view that is not already visible through the windows; keep curtains, blinds and shades in the same open or closed state as the photo.
-(d) Keep every existing furniture piece in the same count, type and position unless the broker explicitly asked to change that exact piece; restyling changes ONLY finish, colour, material, textile and lighting — never the identity, type or number of pieces.
-(e) When unsure whether to add, open, enlarge or invent something, DO NOT: keep only what is in the photo.
+(d) Keep existing furniture as it is UNLESS the broker explicitly asks to change, restyle, remove, move, replace or swap that piece; when they do ask, carry out that replacement or swap faithfully with the new piece they describe and do not keep the old one. Only the pieces the broker did NOT mention stay unchanged in type and position.
+(e) When unsure whether to invent a new window, opening, view or an object the broker did not ask for, DO NOT: keep only what is in the photo. This never restricts furniture the broker explicitly asked to change.
 Always end the "prompt" field with one short sentence restating the single most relevant of these constraints for this specific photo.`;
 
 const CONVO_PROTOCOL = `=== CONVERSATIONAL MODE — this section OVERRIDES the OUTPUT section above ===
