@@ -183,56 +183,6 @@ function fallbackComposition({ userRequest, room, stylePreset }) {
   };
 }
 
-const ANTI_HALLUCINATION = `ABSOLUTE GEOMETRY LOCK — highest priority, applied on top of everything else. The render must show THIS EXACT photographed room with its real architecture untouched:
-(a) Never invent, add, duplicate, enlarge, shrink, move or remove any window, porthole, doorway, opening, wall, mirror, ceiling line, beam, column or staircase that is not already in the uploaded photo.
-(b) Never invent or reveal any exterior view, sky, sea, marina, dock, horizon, extra room or extra space that is not already visible through the existing windows; keep curtains, blinds and shades in the same open or closed state as the photo.
-(c) Never change the camera angle, lens, perspective, framing or the proportions of the space.
-(d) If you are unsure whether a structural element or an exterior view exists, assume it does NOT and keep the architecture exactly as photographed.
-This geometry lock is about architecture, openings, views and camera ONLY. It does NOT restrict the finishes, colours, materials, lighting or the furniture changes the broker asks for. Always end the "prompt" field with one short sentence restating the single most relevant geometry constraint for this specific photo.`;
-
-const CONVO_PROTOCOL = `=== CONVERSATIONAL MODE — this section OVERRIDES the OUTPUT section above ===
-You are talking with the broker turn by turn to reach the most faithful possible refit BEFORE any render is generated. You receive the conversation so far plus the latest broker turn. Choose ONE output:
-
-A) ASK — if something that materially changes the render is still ambiguous or missing, and guessing it would risk a wasted render. Put ALL the open points into ONE single grouped round (never one question at a time). Each question gives concrete tap-options AND lets the broker also type freely. Keep it short and in Italian, and do not interrogate: prefer a single grouped round, and ask again only if a genuinely new ambiguity appears.
-
-B) READY — if you already have enough to nail the request. Produce the full composition exactly as in the original OUTPUT schema above.
-
-PROACTIVE DOMAIN CORRECTION: if the broker asks for something that breaks an architectural lock (move/enlarge/remove a window or porthole, widen the room, open closed curtains, invent an outside view, change the camera angle), do NOT silently comply. In "message", briefly explain that it would break the geometry, and offer the closest legitimate alternative (you can change materials, colours, finishes, textiles and lighting while keeping the structure identical), then ASK the broker to confirm the alternative.
-
-READY GATE: when READY you may set "message" to a short confirmation such as "Ho tutto. Lancio il render?".
-
-OUTPUT (conversational) — respond with ONE valid JSON object and NOTHING else. No markdown, no backticks:
-{
-  "mode": "ask" | "ready",
-  "message": "a short Italian line for the broker (the framing of the grouped questions, the geometry correction, or the readiness confirmation)",
-  "questions": [ { "id": "short_key", "label": "Italian question", "options": ["option 1","option 2","option 3"], "allowFree": true } ],
-  ...when "mode" is "ready", ALSO include EVERY field of the original OUTPUT schema (prompt, remove, declutter, keep, room, style_label, materials, confidence, clarification)
-}
-When "mode" is "ask": "questions" is non-empty and you do NOT include "prompt"/"remove" (no render yet). When "mode" is "ready": set "questions" to [].`;
-
-function renderHistory(history) {
-  if (!Array.isArray(history) || !history.length) return "";
-  return history
-    .map(function (m) {
-      if (!m) return "";
-      var role = (m.role === "assistant" || m.role === "bam" || m.role === "ai") ? "BAM" : "BROKER";
-      var content = typeof m.content === "string" ? m.content : (m && m.text ? m.text : "");
-      content = String(content).trim();
-      return content ? role + ": " + content : "";
-    })
-    .filter(Boolean)
-    .join("\n");
-}
-
-function buildConvoUser(base, history) {
-  var t = renderHistory(history);
-  return (
-    base +
-    (t ? "\n\nConversation so far (oldest first):\n" + t : "") +
-    "\n\nCONVERSATIONAL TURN: follow CONVERSATIONAL MODE and return the conversational JSON object (mode ask or ready), NOT the single-shot object."
-  );
-}
-
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -271,8 +221,6 @@ export default async function handler(req, res) {
   const room = (body.room || "").toString().trim();
   const stylePreset = (body.stylePreset || "").toString().trim();
   const notes = (body.notes || "").toString().trim();
-  const history = Array.isArray(body.history) ? body.history : [];
-  const conversational = body.conversational === true;
 
   // PULIZIA AUTOMATICA: attiva di default. L'app può spegnerla per una singola
   // foto mandando autoClean:false (accetta booleano, numero o stringa).
@@ -314,8 +262,8 @@ export default async function handler(req, res) {
         model: MODEL,
         max_tokens: MAX_TOKENS,
         temperature: TEMPERATURE,
-        system: SYSTEM_PROMPT + "\n\n" + ANTI_HALLUCINATION + (conversational ? "\n\n" + CONVO_PROTOCOL : ""),
-        messages: [{ role: "user", content: conversational ? buildConvoUser(userMessage, history) : userMessage }],
+        system: SYSTEM_PROMPT,
+        messages: [{ role: "user", content: userMessage }],
       }),
     });
 
@@ -346,30 +294,6 @@ export default async function handler(req, res) {
     ? claudeData.content.filter((b) => b.type === "text").map((b) => b.text).join("")
     : "";
   const parsed = extractJson(text);
-  // --- Conversational ASK: grouped question round, no render yet.
-  //     Retrocompatible: this path is taken ONLY when the front-end set conversational=true. ---
-  if (conversational && parsed && parsed.mode === "ask") {
-    const questions = Array.isArray(parsed.questions)
-      ? parsed.questions
-          .filter((q) => q && (q.label || q.question))
-          .map((q) => ({
-            id: String(q.id || "").trim() || "q",
-            label: String(q.label || q.question || "").trim(),
-            options: Array.isArray(q.options) ? q.options.map((o) => String(o).trim()).filter(Boolean) : [],
-            allowFree: q.allowFree !== false,
-          }))
-      : [];
-    if (questions.length) {
-      return res.status(200).json({
-        ok: true,
-        mode: "ask",
-        message: parsed && typeof parsed.message === "string" ? parsed.message.trim() : "",
-        questions: questions,
-        model: MODEL,
-      });
-    }
-  }
-
 
   if (!parsed || !parsed.prompt) {
     const fb = fallbackComposition({ userRequest, room, stylePreset });
@@ -390,9 +314,7 @@ export default async function handler(req, res) {
 
   return res.status(200).json({
     ok: true,
-    mode: "ready",
     prompt: String(parsed.prompt).trim(),
-    message: parsed && typeof parsed.message === "string" ? parsed.message.trim() : "",
     remove: removeMerged,
     declutter: declutter,
     keep: cleanList(parsed.keep),
