@@ -32,7 +32,6 @@ body{font-family:'Crimson Text',Georgia,serif;background:#1a2540;color:#e8dcc8;m
 @keyframes glow{0%,100%{opacity:.62}50%{opacity:1;text-shadow:0 0 22px rgba(201,168,76,.55)}}
 .ltxt{font-family:'Cormorant Garamond',serif;font-size:20px;font-style:italic;color:#c9a84c;letter-spacing:.08em;animation:glow 2.5s ease-in-out infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-@keyframes bamslide{0%{transform:translateX(-120%)}100%{transform:translateX(360%)}}
 .sp{width:44px;height:44px;border:1.5px solid rgba(201,168,76,.1);border-top-color:#c9a84c;border-right-color:rgba(201,168,76,.4);border-radius:50%;animation:spin 1.1s linear infinite;margin:0 auto}
 @keyframes fu{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
 .rv{animation:fu .65s ease forwards}
@@ -238,8 +237,6 @@ const EDIT_ENDPOINT = "/v1/models/google/nano-banana-pro/predictions";
 const EDIT_FALLBACK_ENDPOINT = "/v1/models/google/nano-banana/predictions";
 const JUDGE_ENDPOINT = "/v1/models/google/gemini-3-flash/predictions";
 const N_SAMPLES = 3;
-const NANO_POLISH = " FINAL QUALITY POLISH PASS - improve ONLY the photographic quality of this image and change NOTHING else. Enhance sharpness, realistic lighting, reflections, soft natural shadows, fine texture and material detail, like a professional photo retouch of a luxury yacht interior. Do NOT restyle, recolour, redraw, enlarge, simplify, declutter or rebuild anything. Keep the EXACT same composition, room geometry and proportions, the same walls, ceiling and floor, every window and porthole with the same outside view, the same camera viewpoint, perspective and framing, and every single piece of furniture and object in the same position, shape, colour and material as in this image. Do NOT add, remove or move anything, and do NOT change any colour or finish. Only make it look like a sharper, cleaner, professionally lit real photograph, with natural correct exposure - do NOT overexpose, wash out or blow out the highlights.";
-
 
 // ====================== MOTORE VIDEO (Veo 3.1 i2v + merge) ======================
 const VEO_ENDPOINT = "/v1/models/google/veo-3.1-fast/predictions";
@@ -253,9 +250,8 @@ const VIDEO_JOB_KEY = "bam_video_job_v1"; // salvataggio locale per ripresa/rius
 const SAVE_VIDEO_ENDPOINT = "/api/save-video"; // copia video su Supabase (permanente)
 const CROSSFADE_ENDPOINT = "/api/crossfade"; // unione con dissolvenza + musica (ffmpeg)
 const VIDEO_BUCKET = "dossier-videos";
-const MAX_MERGE = 12; // numero massimo di clip in un solo video
-const PROMPT_VEO_MOVE = "Very slow, gentle, minimal camera movement that stays STRICTLY INSIDE the borders of this exact image: a slow, smooth zoom-in or tiny forward push toward the centre of the room, a very small creep that keeps almost the same framing for the whole clip, barely moving, almost still. The camera must NEVER pan, tilt, roll, orbit, swing, truck, crane or pull back, and must NEVER travel through, into or past any door, doorway, opening, archway, hallway, corridor or window. Show ONLY what is already visible inside this single frame and absolutely nothing else. Do NOT invent, add, imagine, extend, continue or reveal any new space, room, cabin, kitchen, galley, corridor, hallway, staircase, doorway, door, opening, window, wall or architecture beyond the edges of the frame; never expand or widen the scene; never reveal what could be behind, beyond or outside the visible space; never show the other side of any door or opening. Stay perfectly faithful to this exact image for the entire clip, as if filming the real room from a tripod with only a tiny slow forward creep, never uncovering anything that is not already in the picture. Every object stays fully opaque, solid and present for the entire clip: nothing becomes transparent, translucent, glassy, ghosted, faded or dissolved, no furniture disappears or loses its shape, columns and walls stay solid. Keep every material, color, finish and texture EXACTLY as in the image: do not change any metal, do not turn steel, chrome, brushed or satin metal into gold or brass, do not recolor anything, do not change any fabric, upholstery pattern or wood tone, do not restyle or redesign anything. All furniture is solid and rigid: every cabinet, drawer, door, hatch and panel stays fully closed and completely static, nothing opens or moves. No surface deforms, melts, smears, warps, stretches, ripples or morphs; surfaces stay sharp and stable at all times. Do not add, remove, move or alter any object, window, curtain, light fixture or decoration. No new objects, no people, no text. Architecture, columns, lines and proportions stay perfectly fixed. Soft balanced realistic light, photorealistic. Very slow, minimal, steady camera, smooth and stable, almost still.";
-const VIDEO_JUDGE_PROMPT = "You are a strict quality inspector for luxury yacht interior videos. You are given a short AI-generated video (first input) and the original reference image it was generated from (second input). TASK 1 - stability: watch the whole video, especially the second half, for AI defects: any furniture, cabinet, column or wall that becomes transparent, translucent, ghosted, faded, dissolves or disappears; melting, warping, morphing, stretching or rippling of surfaces; cabinet doors or drawers opening; straight lines bending; a straight sofa turning into an angled or corner sofa, or any piece changing its shape. TASK 2 - containment and honesty: check that the video shows ONLY the space that is visible in the reference image and never invents or reveals anything outside it. Heavily penalise the clip if the camera travels through, into or past a door, doorway, opening or window, if it pulls back, pans, orbits or widens to uncover new area, or if the video shows any invented or hallucinated room, cabin, kitchen, galley, corridor, hallway, staircase, doorway, door, opening, window, wall or architecture that is not clearly present in the reference image. A clip that keeps almost the same framing with only a small slow camera move is good; a clip that opens up or reveals new rooms or spaces is bad and must score low. TASK 3 - fidelity: compare the video with the reference image and check material and color fidelity: chrome or steel turning into gold or brass, any color shift, any fabric, upholstery pattern or wood tone changing, any restyling. Ignore differences caused only by lighting. Reply with STRICT JSON only and nothing else, exactly in this form: {\"move_score\": integer 0-100 where 100 means perfectly stable AND fully contained, with zero defects and zero invented or revealed space, and a low value if the clip invents or reveals any space, room, door or opening outside the reference image, \"fidelity\": integer 0-100 where 100 means materials and colors identical to the reference, \"notes\": \"short description or none\"}.";
+const PROMPT_VEO_MOVE = "Smooth, steady, continuous cinematic camera move through this luxury yacht interior at a natural flowing pace that calmly reveals the space; fluid and confident, neither slow and static nor fast and rushed. Reproduce the provided image with absolute fidelity. Every object stays fully opaque, solid and present for the entire clip: nothing becomes transparent, translucent, glassy, ghosted, faded or dissolved, no furniture disappears or loses its shape, columns and walls stay solid. Keep every material, color, finish and texture EXACTLY as in the image: do not change any metal, do not turn steel, chrome, brushed or satin metal into gold or brass, do not recolor anything, do not change any fabric, upholstery pattern or wood tone, do not restyle or redesign anything. All furniture is solid and rigid: every cabinet, drawer, door, hatch and panel stays fully closed and completely static, nothing opens or moves. No surface deforms, melts, smears, warps, stretches, ripples or morphs; surfaces stay sharp and stable at all times. Do not add, remove, move or alter any object, window, curtain, light fixture or decoration. No new objects, no people, no text. Architecture, columns, lines and proportions stay perfectly fixed. Soft balanced realistic light, photorealistic. Confident continuous camera, smooth and stable.";
+const VIDEO_JUDGE_PROMPT = "You are a strict quality inspector for luxury yacht interior videos. You are given a short AI-generated video (first input) and the original reference image it was generated from (second input). TASK 1 - stability: watch the whole video, especially the second half, for AI defects: any furniture, cabinet, column or wall that becomes transparent, translucent, ghosted, faded, dissolves or disappears; melting, warping, morphing, stretching or rippling of surfaces; cabinet doors or drawers opening; straight lines bending; a straight sofa turning into an angled or corner sofa, or any piece changing its shape. TASK 2 - fidelity: compare the video with the reference image and check material and color fidelity: chrome or steel turning into gold or brass, any color shift, any fabric, upholstery pattern or wood tone changing, any restyling. Ignore differences caused only by camera movement, zoom, framing or lighting. Reply with STRICT JSON only and nothing else, exactly in this form: {\"move_score\": integer 0-100 where 100 means perfectly stable with zero defects, \"fidelity\": integer 0-100 where 100 means materials and colors identical to the reference, \"notes\": \"short description or none\"}.";
 
 
 // ---- Persistenza del lavoro in corso (per riprendere dopo un'uscita / ricarica) ----
@@ -550,37 +546,13 @@ async function ensureHiResForVeo(imageUrl) {
   return imageUrl;
 }
 
-// Estrae in modo ROBUSTO un URL https dall'output di una predizione Replicate,
-// che puo' essere una stringa, un array, oppure un oggetto ({video:...},{url:...}, ecc.).
-// Se non trova un URL https valido restituisce null: cosi la clip viene scartata e
-// MAI salvata con un URL finto tipo "[object Object]" (la causa dei 400 su save-video).
-function firstUrl(out) {
-  if (typeof out === "string") return /^https:\/\//.test(out) ? out : null;
-  if (Array.isArray(out)) { for (let i = 0; i < out.length; i++) { const u = firstUrl(out[i]); if (u) return u; } return null; }
-  if (out && typeof out === "object") {
-    const keys = ["video", "url", "output", "file", "mp4", "uri", "video_url"];
-    for (let i = 0; i < keys.length; i++) { const u = firstUrl(out[keys[i]]); if (u) return u; }
-    for (const k in out) { const u = firstUrl(out[k]); if (u) return u; }
-    return null;
-  }
-  return null;
-}
-
 // Genera UNA clip Veo da una foto (URL firmato, fetchato lato Replicate).
 async function veoClip(imageUrl, token, shouldStop, endpoint) {
   let pred = await replicateCreate(endpoint || VEO_ENDPOINT, token, { input: { prompt: PROMPT_VEO_MOVE, image: imageUrl, duration: 8, resolution: "1080p" } });
   pred = await replicatePoll(pred, token, 180, shouldStop);
-  const u = firstUrl(pred.output);
-  if (!u) {
-    // DIAGNOSTICA TEMPORANEA: l'output non conteneva un URL https -> mando la sua forma al server per i log.
-    try {
-      const o = pred.output;
-      const shape = (o === null || o === undefined) ? String(o) : (Array.isArray(o) ? ("array[" + o.length + "]") : typeof o);
-      const keys = (o && typeof o === "object" && !Array.isArray(o)) ? Object.keys(o).slice(0, 15) : null;
-      fetch(SAVE_VIDEO_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ diag: "veo-output", shape: shape, keys: keys, sample: JSON.stringify(o).slice(0, 400) }) });
-    } catch (_) {}
-  }
-  return u;
+  let out = pred.output;
+  if (Array.isArray(out)) out = out[0];
+  return out ? String(out) : null;
 }
 
 // Giudica UNA clip con Gemini: video + immagine di riferimento -> {move,fid}.
@@ -660,14 +632,18 @@ async function addMusic(videoUrl, musicUrl, token) {
   const ver = await modelVersion(MUSIC_MERGE_MODEL_ENDPOINT, token);
   let pred = await replicateCreate(PREDICTIONS_ENDPOINT, token, { version: ver, input: { video_file: videoUrl, audio_file: musicUrl, replace_audio: true, duration_mode: "video", audio_volume: 0.85 } });
   pred = await replicatePoll(pred, token, 150);
-  return firstUrl(pred.output);
+  let out = pred.output;
+  if (Array.isArray(out)) out = out[0];
+  return out ? String(out) : null;
 }
 
 // Upscale AI fino a 4K con Topaz (modello ufficiale, temporal-aware: niente sfarfallio).
 async function topazUpscale(videoUrl, token) {
   let pred = await replicateCreate(TOPAZ_VIDEO_ENDPOINT, token, { input: { video: videoUrl, upscale_factor: "2x" } });
   pred = await replicatePoll(pred, token, 300);
-  return firstUrl(pred.output);
+  let out = pred.output;
+  if (Array.isArray(out)) out = out[0];
+  return out ? String(out) : null;
 }
 
 // Unisce piu' clip in UN solo mp4 e applica una musica unica su tutta la durata.
@@ -676,7 +652,9 @@ async function mergeClips(urls, token) {
   // 1) unisci le clip SENZA l'audio spezzettato
   let pred = await replicateCreate(PREDICTIONS_ENDPOINT, token, { version: ver, input: { video_files: urls, keep_audio: false } });
   pred = await replicatePoll(pred, token, 150);
-  const merged = firstUrl(pred.output);
+  let out = pred.output;
+  if (Array.isArray(out)) out = out[0];
+  const merged = out ? String(out) : null;
   if (!merged) return null;
   // 2) musica unica su tutto (best-effort: se fallisce resta comunque il video unito)
   try {
@@ -742,12 +720,8 @@ function BAMYachtApp() {
   const videoStopRef = useRef(false);
   const [videoStopReq, setVideoStopReq] = useState(false);
   const [savedVideos, setSavedVideos] = useState([]);
-  const [mergeSel, setMergeSel] = useState([]);          // id dei video salvati selezionati per l'unione
   const [savedBusy, setSavedBusy] = useState(false);
   const [dlBusy, setDlBusy] = useState(false);
-  const [mergeSecs, setMergeSecs] = useState(0);
-  const [saveReady, setSaveReady] = useState(false);
-  const mergedFileRef = useRef(null);
   const [costPerVideo, setCostPerVideo] = useState("5.50");
   const [costPerMerge, setCostPerMerge] = useState("5.00");
   const [videoResume, setVideoResume] = useState(null);
@@ -759,31 +733,9 @@ function BAMYachtApp() {
     }
     if (videoSelMode) loadSavedVideos();
   }, [videoSelMode]);
-  useEffect(function () { const j = loadVideoJob(); if (j && j.done && j.done.length) setVideoResume(j); }, []);
-  useEffect(function () {
-    if (!merging) { setMergeSecs(0); return; }
-    const t0 = Date.now(); setMergeSecs(0);
-    const id = setInterval(function () { setMergeSecs(Math.floor((Date.now() - t0) / 1000)); }, 1000);
-    return function () { clearInterval(id); };
-  }, [merging]);
-  useEffect(function () {
-    let cancelled = false; mergedFileRef.current = null; setSaveReady(false);
-    if (!mergedUrl) return;
-    (async function () {
-      try {
-        const r = await fetch(mergedUrl);
-        if (!r.ok || cancelled) return;
-        const b = await r.blob();
-        if (cancelled) return;
-        mergedFileRef.current = new File([b], "BAM-video-unico.mp4", { type: "video/mp4" });
-        setSaveReady(true);
-      } catch (_) {}
-    })();
-    return function () { cancelled = true; };
-  }, [mergedUrl]);  // id render espanso nel confronto
+  useEffect(function () { const j = loadVideoJob(); if (j && j.done && j.done.length) setVideoResume(j); }, []);  // id render espanso nel confronto
   const [selMode, setSelMode] = useState(false);         // modalità selezione attiva
   const [selected, setSelected] = useState([]);          // id render selezionati (in ordine)
-  const [delBusy, setDelBusy] = useState(false);          // eliminazione archivio in corso
   const [pdfTitle, setPdfTitle] = useState("");          // titolo del dossier da comporre
   const [composing, setComposing] = useState(false);     // PDF in creazione
   const [resumeJob, setResumeJob] = useState(null);       // lavoro interrotto da riprendere a mano
@@ -977,7 +929,7 @@ function BAMYachtApp() {
 
 
   const loadFilesBatch = useCallback(function (fileList) {
-    var files = Array.prototype.slice.call(fileList || []).filter(function (f) { return f && (!f.type || f.type.indexOf("image/") === 0); }).slice(0, 15);
+    var files = Array.prototype.slice.call(fileList || []).filter(function (f) { return f && (!f.type || f.type.indexOf("image/") === 0); }).slice(0, 10);
     if (!files.length) return;
     setImg(null); setResult(null); setResultB64(null); setErr(null); setBatchDone(null); setBatchErr(null);
     Promise.all(files.map(function (file) {
@@ -1029,30 +981,15 @@ function BAMYachtApp() {
       if (!styleClause) styleClause = stylePreset || "refit elegante";
       var alreadyGone = removals.length ? " The following item(s) MUST stay completely absent: " + removals.join("; ") + "." : "";
       var keepClause = keeps.length ? " CRITICAL - do NOT remove or replace these pieces, they MUST stay present and in place: " + keeps.join("; ") + "." : "";
-      var SCAFFOLD = "Photorealistic refit of THIS exact yacht interior shown in the image. ABSOLUTE RULES, in order of priority: (1) Keep the room architecture, walls, ceiling, every window and porthole, the exact view seen OUTSIDE through the windows, and the camera viewpoint and perspective IDENTICAL to the original photo. (2) Do NOT redesign the room from scratch and do NOT remove the room's designed, built-in furniture: every sofa, armchair, bed, the dining table with its dining chairs, ottoman, console, cabinet, lamp and light fitting that belongs to the room must stay present and in the same position, UNLESS the user explicitly asks to remove or move that specific piece. As the VERY FIRST operation, however, automatically DECLUTTER the scene to make it a clean, brochure-ready listing photo: completely remove out-of-place and temporary objects and rebuild the matching floor, surface and background behind them. TREAT AS CLUTTER AND ALWAYS REMOVE: folding or director's chairs left out or stacked, step-ladders and ladders, tools and toolboxes, cardboard boxes, crates, bags, luggage and backpacks, loose shoes, towels or clothes thrown around, loose cables, chargers and power strips, cleaning products, buckets and mops, fenders or ropes brought inside, and bottles, cans, mugs or dishes left out. Keep intentional, tidy decor (a vase, a bowl, neatly arranged books); when unsure whether something is clutter or genuine furniture, keep it. (3) Carry out EVERY change the user lists below as a MANDATORY instruction. Restyle the pieces that stay (colours, fabrics, materials, finishes, lighting) as described. (4) If the user asks for a lighter or different finish, apply it to the ENTIRE room and to EVERY wooden element so that NO original dark or warm-orange wood is left anywhere (unless the user asked to keep wood). The room must remain fully furnished, lived-in and realistic - never a bare empty room.";
+      var SCAFFOLD = "Photorealistic refit of THIS exact yacht interior shown in the image. ABSOLUTE RULES, in order of priority: (1) Keep the room architecture, walls, ceiling, every window and porthole, the exact view seen OUTSIDE through the windows, and the camera viewpoint and perspective IDENTICAL to the original photo. (2) Do NOT empty or simplify the room and do NOT redesign it from scratch: every sofa, armchair, chair, table and lamp that exists in the image must still be present and in the same position in the result, UNLESS the user explicitly asks to remove or move that specific piece. (3) Carry out EVERY change the user lists below as a MANDATORY instruction. Restyle the pieces that stay (colours, fabrics, materials, finishes, lighting) as described. (4) If the user asks for a lighter or different finish, apply it to the ENTIRE room and to EVERY wooden element so that NO original dark or warm-orange wood is left anywhere (unless the user asked to keep wood). The room must remain fully furnished, lived-in and realistic - never a bare empty room.";
       function buildPrompt(extra) { return SCAFFOLD + alreadyGone + keepClause + " User's requested changes: " + styleClause + "." + (extra || "") + " The result must be a believable, fully-furnished luxury yacht interior, professional architectural photography, ultra detailed."; }
       async function runEditB(endpoint, prompt, imgs) {
-        var p = await replicateCreate(endpoint, token, { input: { prompt: prompt, image_input: imgs, aspect_ratio: "match_input_image" } });
+        var p = await replicateCreate(endpoint, token, { input: { prompt: prompt, image_input: imgs } });
         p = await replicatePoll(p, token, 90);
         return Array.isArray(p.output) ? p.output[0] : p.output;
       }
-      // Flux Kontext Max per il walkthrough: input_image singolare (prima foto della lista).
-      async function runFluxB(prompt, imgs) {
-        var base = Array.isArray(imgs) ? imgs[0] : imgs;
-        var p = await replicateCreate(MODEL_ENDPOINT, token, { input: { prompt: prompt, input_image: base, aspect_ratio: "match_input_image", output_format: "jpg" } });
-        p = await replicatePoll(p, token, 90);
-        return Array.isArray(p.output) ? p.output[0] : p.output;
-      }
-      function runNanoB(prompt, imgs) {
+      function runSampleB(prompt, imgs) {
         return runEditB(EDIT_ENDPOINT, prompt, imgs).catch(function () { return runEditB(EDIT_FALLBACK_ENDPOINT, prompt, imgs); }).catch(function () { return null; });
-      }
-      // PIPELINE A DUE PASSAGGI (walkthrough): 1) Flux Kontext Max blocca la geometria; 2) nano-banana rifinisce sopra.
-      async function runSampleB(prompt, imgs) {
-        var fluxOut = null;
-        try { fluxOut = await runFluxB(prompt, imgs); } catch (_) { fluxOut = null; }
-        if (!fluxOut) return await runNanoB(prompt, imgs);
-        var polished = await runNanoB(NANO_POLISH, [fluxOut]);
-        return polished || fluxOut;
       }
       var sess = await supabaseClient.auth.getSession();
       var uid = sess && sess.data && sess.data.session && sess.data.session.user && sess.data.session.user.id;
@@ -1185,38 +1122,19 @@ function BAMYachtApp() {
       const keepClause = keeps.length
         ? " CRITICAL - do NOT remove or replace these pieces, they MUST stay present and in place: " + keeps.join("; ") + "."
         : "";
-      const editPrompt = "Photorealistic refit of THIS exact yacht interior shown in the image. ABSOLUTE RULES, in order of priority: (1) Keep the room architecture, walls, ceiling, every window and porthole, the exact view seen OUTSIDE through the windows, and the camera viewpoint and perspective IDENTICAL to the original photo. (2) Do NOT redesign the room from scratch and do NOT remove the room's designed, built-in furniture: every sofa, armchair, bed, the dining table with its dining chairs, ottoman, console, cabinet, lamp and light fitting that belongs to the room must stay present and in the same position, UNLESS the user explicitly asks to remove or move that specific piece. As the VERY FIRST operation, however, automatically DECLUTTER the scene to make it a clean, brochure-ready listing photo: completely remove out-of-place and temporary objects and rebuild the matching floor, surface and background behind them. TREAT AS CLUTTER AND ALWAYS REMOVE: folding or director's chairs left out or stacked, step-ladders and ladders, tools and toolboxes, cardboard boxes, crates, bags, luggage and backpacks, loose shoes, towels or clothes thrown around, loose cables, chargers and power strips, cleaning products, buckets and mops, fenders or ropes brought inside, and bottles, cans, mugs or dishes left out. Keep intentional, tidy decor (a vase, a bowl, neatly arranged books); when unsure whether something is clutter or genuine furniture, keep it. (3) Carry out EVERY change the user lists below as a MANDATORY instruction, not an optional suggestion. In particular: if the user asks to REMOVE a specific item, that item MUST be completely absent from the result (replace the area with floor/empty space that matches the room) and every OTHER piece stays; if the user asks to MOVE or ROTATE a piece, reposition that piece accordingly while keeping the rest; if the user asks to ADD, SWAP or MODERNISE something (e.g. lamps), do exactly that. Make only the changes the user lists, nothing more. Restyle the pieces that stay (colours, fabrics, materials, finishes, lighting) as described. (4) If the user asks for a lighter or different finish, apply it to the ENTIRE room and to EVERY wooden element - all wall and ceiling panels, all wood trim, mouldings and borders, the ceiling coffer/border, door frames and doors, window frames, handrails, the nightstands, the headboard and its surround, and all built-in cabinetry - so that NO original dark or warm-orange wood is left anywhere in the result (unless the user asked to keep wood). Do not leave wood trim, frames or the ceiling border in the old finish: convert them too. The room must remain fully furnished, lived-in and realistic - never a bare empty room." + alreadyGone + keepClause + " User's requested changes: " + styleClause + ". The result must be a believable, fully-furnished luxury yacht interior, professional architectural photography, ultra detailed.";
+      const editPrompt = "Photorealistic refit of THIS exact yacht interior shown in the image. ABSOLUTE RULES, in order of priority: (1) Keep the room architecture, walls, ceiling, every window and porthole, the exact view seen OUTSIDE through the windows, and the camera viewpoint and perspective IDENTICAL to the original photo. (2) Do NOT empty or simplify the room and do NOT redesign it from scratch: every sofa, armchair, chair, table and lamp that exists in the image must still be present and in the same position in the result, UNLESS the user explicitly asks to remove or move that specific piece. (3) Carry out EVERY change the user lists below as a MANDATORY instruction, not an optional suggestion. In particular: if the user asks to REMOVE a specific item, that item MUST be completely absent from the result (replace the area with floor/empty space that matches the room) and every OTHER piece stays; if the user asks to MOVE or ROTATE a piece, reposition that piece accordingly while keeping the rest; if the user asks to ADD, SWAP or MODERNISE something (e.g. lamps), do exactly that. Make only the changes the user lists, nothing more. Restyle the pieces that stay (colours, fabrics, materials, finishes, lighting) as described. (4) If the user asks for a lighter or different finish, apply it to the ENTIRE room and to EVERY wooden element - all wall and ceiling panels, all wood trim, mouldings and borders, the ceiling coffer/border, door frames and doors, window frames, handrails, the nightstands, the headboard and its surround, and all built-in cabinetry - so that NO original dark or warm-orange wood is left anywhere in the result (unless the user asked to keep wood). Do not leave wood trim, frames or the ceiling border in the old finish: convert them too. The room must remain fully furnished, lived-in and realistic - never a bare empty room." + alreadyGone + keepClause + " User's requested changes: " + styleClause + ". The result must be a believable, fully-furnished luxury yacht interior, professional architectural photography, ultra detailed.";
 
       // runEdit generico: stesso modello, ma prompt e immagine di partenza variabili.
       async function runEdit(endpoint, prompt, baseImage) {
-        let p = await replicateCreate(endpoint, token, { input: { prompt: prompt, image_input: [baseImage], aspect_ratio: "match_input_image" } });
+        let p = await replicateCreate(endpoint, token, { input: { prompt: prompt, image_input: [baseImage] } });
         p = await replicatePoll(p, token, 90);
         return Array.isArray(p.output) ? p.output[0] : p.output;
       }
-      // Flux Kontext Max: parametri DIVERSI da nano-banana.
-      // Campo immagine = input_image (singolare). Flux lavora sui pixel veri = blocca la geometria.
-      async function runFlux(prompt, baseImage) {
-        let p = await replicateCreate(MODEL_ENDPOINT, token, { input: { prompt: prompt, input_image: baseImage, aspect_ratio: "match_input_image", output_format: "jpg" } });
-        p = await replicatePoll(p, token, 90);
-        return Array.isArray(p.output) ? p.output[0] : p.output;
-      }
-      // Solo nano-banana (rifinitura/fallback), prova principale + fallback.
-      function runNano(prompt, baseImage) {
+      // una proposta = prova il modello principale, poi il fallback, poi null.
+      function runSample(prompt, baseImage) {
         return runEdit(EDIT_ENDPOINT, prompt, baseImage)
           .catch(() => runEdit(EDIT_FALLBACK_ENDPOINT, prompt, baseImage))
           .catch(() => null);
-      }
-      // PIPELINE A DUE PASSAGGI per una proposta:
-      // 1) Flux Kontext Max applica lo stile/refit BLOCCANDO la geometria sulla foto vera;
-      // 2) nano-banana rifinisce SOPRA il risultato di Flux (materiali, luce) senza ridisegnare la stanza.
-      async function runSample(prompt, baseImage) {
-        let fluxOut = null;
-        try { fluxOut = await runFlux(prompt, baseImage); } catch (_) { fluxOut = null; }
-        // Se Flux non risponde, ripiego: nano-banana direttamente sulla foto originale.
-        if (!fluxOut) return await runNano(prompt, baseImage);
-        // Passo 2: nano-banana abbellisce il render di Flux, vincolato a NON cambiare la stanza.
-        const polished = await runNano(NANO_POLISH, fluxOut);
-        return polished || fluxOut; // se la rifinitura fallisce, resta il render di Flux (geometria ok)
       }
 
       // Schema CHIARO richiesto su parete/intero ambiente? Allora conviene un passaggio
@@ -1701,7 +1619,6 @@ function BAMYachtApp() {
       const jwt = sess ? sess.access_token : null;
       const uid = sess && sess.user ? sess.user.id : null;
       if (!jwt || !uid) return null;
-      if (!url || !/^https:\/\//.test(String(url))) return null; // mai inviare un URL non valido a save-video (evita i 400)
       const path = uid + "/" + Date.now() + "_" + Math.random().toString(36).slice(2, 8) + ".mp4";
       const r = await fetch(SAVE_VIDEO_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url, path: path, jwt: jwt }) });
       if (!r.ok) return null;
@@ -1724,41 +1641,10 @@ function BAMYachtApp() {
       let signed = [];
       try { const sg = await supabaseClient.storage.from(VIDEO_BUCKET).createSignedUrls(paths, 3600); signed = (sg && sg.data) ? sg.data : []; } catch (_) { signed = []; }
       const byPath = {}; signed.forEach(function (x) { if (x && x.path) byPath[x.path] = x.signedUrl; });
-      const out = rows.map(function (r) { return { id: r.id, label: r.label, kind: r.kind, is_merged: r.is_merged, storage_path: r.storage_path, url: byPath[r.storage_path] || null, created_at: r.created_at }; }).filter(function (x) { return x.url; });
+      const out = rows.map(function (r) { return { id: r.id, label: r.label, kind: r.kind, is_merged: r.is_merged, url: byPath[r.storage_path] || null, created_at: r.created_at }; }).filter(function (x) { return x.url; });
       setSavedVideos(out);
     } catch (_) { setSavedVideos([]); }
     finally { setSavedBusy(false); }
-  }
-
-  function fmtSecs(s) { const m = Math.floor(s / 60), r = s % 60; return m + ":" + (r < 10 ? "0" : "") + r; }
-
-  function downloadBlob(blob, name) {
-    const u = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(function () { URL.revokeObjectURL(u); }, 5000);
-  }
-
-  // Salva restando DENTRO l'app: su iOS apre il pannello Condividi nativo (overlay, niente
-  // nuova scheda) per mettere il video in File o Foto; su desktop scarica il file.
-  function shareFileInApp(file) {
-    try {
-      if (file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-        navigator.share({ files: [file], title: "BAM Vision" }).catch(function () {});
-        return true;
-      }
-    } catch (_) {}
-    return false;
-  }
-
-  function saveMerged() {
-    const f = mergedFileRef.current;
-    if (f) {
-      if (shareFileInApp(f)) return;
-      downloadBlob(f, "BAM-video-unico.mp4");
-      return;
-    }
-    saveToDevice(mergedUrl, "BAM-video-unico.mp4");
   }
 
   async function saveToDevice(url, name) {
@@ -1769,10 +1655,16 @@ function BAMYachtApp() {
       if (!resp.ok) throw new Error("fetch " + resp.status);
       const blob = await resp.blob();
       const file = new File([blob], fname, { type: "video/mp4" });
-      if (shareFileInApp(file)) return;
-      downloadBlob(blob, fname);
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: "BAM Vision" }); return; }
+        catch (e) { if (e && e.name === "AbortError") return; }
+      }
+      const u = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = u; a.download = fname; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(u); }, 5000);
     } catch (e) {
-      setMergeErr("Non sono riuscito a salvare il file. Riprova tra poco.");
+      try { window.open(url, "_blank"); } catch (_) {}
     } finally { setDlBusy(false); }
   }
 
@@ -1783,38 +1675,13 @@ function BAMYachtApp() {
     const uid = sess && sess.user ? sess.user.id : null;
     if (!jwt || !uid || !urls || urls.length < 2) return null;
     const path = uid + "/" + Date.now() + "_dissolve.mp4";
-
-    // Firma il file finale se gia' presente su Supabase, altrimenti null.
-    async function trySign() {
-      try {
-        const sg = await supabaseClient.storage.from(VIDEO_BUCKET).createSignedUrl(path, 3600);
-        return sg && sg.data && sg.data.signedUrl ? sg.data.signedUrl : null;
-      } catch (_) { return null; }
-    }
-
-    // Lancia il crossfade sul server. Su mobile la richiesta lunga (~20-30s) puo' cadere
-    // mentre il server continua a lavorare e carica il file finale: per questo NON ci
-    // affidiamo alla risposta della fetch, ma verifichiamo la comparsa del file su Supabase.
-    let httpErr = false;
-    try {
-      const r = await fetch(CROSSFADE_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ urls: urls, jwt: jwt, path: path }) });
-      if (!r || !r.ok) httpErr = true;
-    } catch (_) { /* connessione caduta: il server puo' aver finito comunque */ }
-
-    // Errore HTTP esplicito (4xx/5xx): il server non produrra' il file -> ripiego.
-    if (httpErr) return null;
-
-    // Attendi la comparsa del file finale (server maxDuration ~60s). Poll ogni 3s fino a ~80s.
-    let signed = await trySign();
-    if (!signed) {
-      const deadline = Date.now() + 310000;
-      while (!signed && Date.now() < deadline) {
-        await new Promise(function (res) { setTimeout(res, 3000); });
-        signed = await trySign();
-      }
-    }
+    const r = await fetch(CROSSFADE_ENDPOINT, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ urls: urls, jwt: jwt, path: path }) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (!j || !j.ok) return null;
+    let signed = null;
+    try { const sg = await supabaseClient.storage.from(VIDEO_BUCKET).createSignedUrl(path, 3600); signed = sg && sg.data ? sg.data.signedUrl : null; } catch (_) {}
     if (!signed) return null;
-
     try { await supabaseClient.from("dossier_videos").insert({ broker_id: uid, label: "Video unico", kind: "merged", is_merged: true, storage_path: path, source_count: urls.length, model: "crossfade-ffmpeg" }); } catch (_) {}
     return signed;
   }
@@ -1825,55 +1692,38 @@ function BAMYachtApp() {
     // 1) dissolvenza + musica + togli-bande (gia' salvato su Supabase)
     let assembled = null;
     try { const cf = await crossfadeMerge(urls); if (cf) assembled = cf; } catch (_) {}
-    // Nessun ripiego a 1080p via Replicate: se il montaggio 2.5K non riesce, restituiamo
-    // null e l'app mostra un errore chiaro, invece di consegnare un video di qualita'
-    // inferiore (stacco netto, niente dissolvenze) facendo anche spendere GPU.
+    if (!assembled) {
+      const url = await mergeClips(urls, token);
+      if (url) {
+        try {
+          const p = await cloudSaveVideo(url, "merged", "Video unico", null, { source_count: urls.length });
+          if (p) { const sg = await supabaseClient.storage.from(VIDEO_BUCKET).createSignedUrl(p, 3600); if (sg && sg.data && sg.data.signedUrl) assembled = sg.data.signedUrl; }
+        } catch (_) {}
+        if (!assembled) assembled = url;
+      }
+    }
     if (!assembled) return null;
-    // Niente upscale Topaz: il video unito 2.5K con musica, dissolvenza e watermark e' gia' il file finale
-    // (Topaz toglieva l'audio e raddoppiava i tempi).
+    // 2) upscale AI a 4K, automatico. Best-effort: se non riesce resta il video unito.
+    try {
+      const url4k = await topazUpscale(assembled, token);
+      if (url4k) {
+        const p = await cloudSaveVideo(url4k, "merged", "Video unico", null, { source_count: urls.length, model: "upscale-4k" });
+        if (p) { try { const sg = await supabaseClient.storage.from(VIDEO_BUCKET).createSignedUrl(p, 3600); if (sg && sg.data && sg.data.signedUrl) return sg.data.signedUrl; } catch (_) {} }
+        return url4k;
+      }
+    } catch (_) {}
     return assembled;
   }
 
-  async function freshUrlsFor(clips) {
-    const paths = clips.map(function (c) { return c.storage_path; }).filter(Boolean);
-    if (!paths.length) return clips.map(function (c) { return c.url; }).filter(Boolean);
-    try {
-      const sg = await supabaseClient.storage.from(VIDEO_BUCKET).createSignedUrls(paths, 3600);
-      const byPath = {}; (((sg && sg.data) || [])).forEach(function (s) { if (s && s.path && s.signedUrl) byPath[s.path] = s.signedUrl; });
-      return clips.map(function (c) { return byPath[c.storage_path] || c.url; }).filter(Boolean);
-    } catch (_) { return clips.map(function (c) { return c.url; }).filter(Boolean); }
-  }
-
   async function mergeSaved() {
-    const clips = (savedVideos || []).filter(function (v) { return !v.is_merged && (v.storage_path || v.url); });
+    const clips = (savedVideos || []).filter(function (v) { return !v.is_merged && v.url; });
     if (clips.length < 2) { setMergeErr("Servono almeno 2 clip salvate per unire."); return; }
-    if (clips.length > MAX_MERGE) { setMergeErr("Hai " + clips.length + " clip salvate: troppe. Spunta solo i " + MAX_MERGE + " video (max) che vuoi e premi Unisci selezionati."); return; }
+    if (!token) { setMergeErr("Manca il token Replicate."); return; }
     setMergeErr(null); setMerging(true);
     try {
-      const urls = await freshUrlsFor(clips);
-      if (urls.length < 2) throw new Error("Link delle clip non validi, riapri l'archivio e riprova.");
-      const url = await runMerge(urls);
+      const url = await runMerge(clips.map(function (c) { return c.url; }));
       if (!url) throw new Error("Unione non riuscita.");
       setMergedUrl(url);
-      loadSavedVideos();
-    } catch (e) { setMergeErr(e && e.message ? e.message : String(e)); }
-    finally { setMerging(false); }
-  }
-
-  async function mergeSelected() {
-    const byId = {};
-    (savedVideos || []).forEach(function (v) { byId[v.id || v.url] = v; });
-    const clips = mergeSel.map(function (k) { return byId[k]; }).filter(function (v) { return v && (v.storage_path || v.url); });
-    if (clips.length < 2) { setMergeErr("Seleziona almeno 2 video per unirli."); return; }
-    if (clips.length > MAX_MERGE) { setMergeErr("Troppi video: massimo " + MAX_MERGE + ". Deselezionane qualcuno."); return; }
-    setMergeErr(null); setMerging(true);
-    try {
-      const urls = await freshUrlsFor(clips);
-      if (urls.length < 2) throw new Error("Link dei video non validi, riapri l'archivio e riprova.");
-      const url = await runMerge(urls);
-      if (!url) throw new Error("Unione non riuscita.");
-      setMergedUrl(url);
-      setMergeSel([]);
       loadSavedVideos();
     } catch (e) { setMergeErr(e && e.message ? e.message : String(e)); }
     finally { setMerging(false); }
@@ -1896,49 +1746,32 @@ function BAMYachtApp() {
     try {
       let uid = null;
       try { const au = await supabaseClient.auth.getUser(); uid = au && au.data && au.data.user ? au.data.user.id : null; } catch (_) {}
-      // Genero le stanze a piccoli gruppi IN PARALLELO (i campioni di ogni stanza sono
-      // gia' paralleli). Il risultato di ogni clip e' identico: cambia solo che piu' stanze
-      // partono insieme. mapStaggered sfalsa le partenze e replicateCreate ritenta sui 429.
-      const VIDEO_BATCH = 2; // stanze in parallelo per gruppo (2 = fino a 4 generazioni Veo insieme, evita i 429 di Veo)
-      async function processRoom(i) {
-        if (videoStopRef.current) return { stop: true };
+      for (let i = 0; i < items.length; i++) {
+        if (videoStopRef.current) { push("\u23F9 Interrotto. Le clip gi\u00E0 pronte restano salvate; ripremi \u00ABCrea video\u00BB per riprendere da dove eri."); break; }
+        setVideoProg({ done: i, total: items.length, name: items[i].label || "" });
+        let clip;
         if (items[i].key && priorByKey[items[i].key]) {
-          return { clip: priorByKey[items[i].key], reused: true };
-        }
-        let made = null;
-        for (let attempt = 0; attempt < 2 && !made && !videoStopRef.current; attempt++) {
-          try { made = await makeRoomVideo(items[i], token, push, function () { return videoStopRef.current; }); }
-          catch (errRoom) { if (attempt === 0 && !videoStopRef.current) push("\u21BB " + (items[i].label || ("Ambiente " + (i + 1))) + ": riprovo una volta\u2026"); }
-        }
-        if (videoStopRef.current) return { stop: true };
-        if (!made) return { failedLabel: items[i].label || ("Ambiente " + (i + 1)) };
-        made.key = items[i].key || null;
-        try { await cloudSaveVideo(made.url, made.kind || "after", made.label, made.room_id, { move_score: made.move, fidelity_score: made.fid, samples: VIDEO_N_SAMPLES }); } catch (_) {}
-        return { clip: made };
-      }
-      let interrotto = false;
-      for (let start = 0; start < items.length && !interrotto; start += VIDEO_BATCH) {
-        if (videoStopRef.current) { interrotto = true; break; }
-        const idxs = [];
-        for (let j = start; j < Math.min(start + VIDEO_BATCH, items.length); j++) idxs.push(j);
-        setVideoProg({ done: done.length, total: items.length, name: items[idxs[0]].label || "" });
-        const results = await mapStaggered(idxs, 400, function (i) { return processRoom(i); });
-        for (let r = 0; r < results.length; r++) {
-          const res = results[r] || {};
-          if (res.stop) { interrotto = true; continue; }
-          if (res.failedLabel) {
-            push("\u26A0 " + res.failedLabel + ": saltato (nessuna versione riuscita). Vado avanti.");
-            failed.push(res.failedLabel);
+          clip = priorByKey[items[i].key];
+          push("\u21BB " + (clip.label || "Foto") + ": riuso la clip gi\u00E0 pronta (nessun costo).");
+        } else {
+          let made = null;
+          for (let attempt = 0; attempt < 2 && !made && !videoStopRef.current; attempt++) {
+            try { made = await makeRoomVideo(items[i], token, push, function () { return videoStopRef.current; }); }
+            catch (errRoom) { if (attempt === 0 && !videoStopRef.current) push("\u21BB " + (items[i].label || ("Ambiente " + (i + 1))) + ": riprovo una volta\u2026"); }
+          }
+          if (videoStopRef.current) { push("\u23F9 Interrotto. Le clip gi\u00E0 pronte restano salvate; ripremi \u00ABCrea video\u00BB per riprendere da dove eri."); break; }
+          if (!made) {
+            push("\u26A0 " + (items[i].label || ("Ambiente " + (i + 1))) + ": saltato (nessuna versione riuscita). Vado avanti.");
+            failed.push(items[i].label || ("Ambiente " + (i + 1)));
             continue;
           }
-          if (res.clip) {
-            if (res.reused) push("\u21BB " + (res.clip.label || "Foto") + ": riuso la clip gi\u00E0 pronta (nessun costo).");
-            done.push(res.clip);
-            setVideoClips(done.slice());
-            saveVideoJob({ ts: Date.now(), items: meta, done: done, merged: null });
-          }
+          clip = made;
+          clip.key = items[i].key || null;
+          try { await cloudSaveVideo(clip.url, clip.kind || "after", clip.label, clip.room_id, { move_score: clip.move, fidelity_score: clip.fid, samples: VIDEO_N_SAMPLES }); } catch (_) {}
         }
-        if (interrotto || videoStopRef.current) { push("\u23F9 Interrotto. Le clip gi\u00E0 pronte restano salvate; ripremi \u00ABCrea video\u00BB per riprendere da dove eri."); interrotto = true; break; }
+        done.push(clip);
+        setVideoClips(done.slice());
+        saveVideoJob({ ts: Date.now(), items: meta, done: done, merged: null });
       }
       setVideoProg({ done: items.length, total: items.length, name: "" });
       let doneMsg = "\u2014 Fatto: " + done.length + (done.length === 1 ? " clip pronta." : " clip pronte.");
@@ -1961,24 +1794,24 @@ function BAMYachtApp() {
       const au = await supabaseClient.auth.getUser();
       const uid = au && au.data && au.data.user ? au.data.user.id : null;
       if (!uid) return map;
-      const q = await supabaseClient.from("dossier_videos").select("label,dossier_room_id,kind,storage_path,created_at,is_merged").eq("broker_id", uid).eq("is_merged", false).order("created_at", { ascending: false }).limit(60);
+      const q = await supabaseClient.from("dossier_videos").select("label,storage_path,created_at,is_merged").eq("broker_id", uid).eq("is_merged", false).order("created_at", { ascending: false }).limit(60);
       const rows = (q && q.data) ? q.data : [];
       const paths = rows.map(function (r) { return r.storage_path; }).filter(Boolean);
       if (!paths.length) return map;
       const sg = await supabaseClient.storage.from(VIDEO_BUCKET).createSignedUrls(paths, 3600);
       const byPath = {}; (((sg && sg.data) || [])).forEach(function (s) { if (s && s.path && s.signedUrl) byPath[s.path] = s.signedUrl; });
-      rows.forEach(function (r) { if (!byPath[r.storage_path]) return; var uk = (r.dossier_room_id || "") + ":" + (r.kind || ""); if (!map[uk]) map[uk] = byPath[r.storage_path]; });
+      rows.forEach(function (r) { if (r.label && !map[r.label] && byPath[r.storage_path]) map[r.label] = byPath[r.storage_path]; });
     } catch (_) {}
     return map;
   }
 
   async function mergeVideos() {
+    if (!token) { setMergeErr("Manca il token Replicate."); return; }
     if (!videoClips || videoClips.length < 2) return;
-    if (videoClips.length > MAX_MERGE) { setMergeErr("Troppe clip: massimo " + MAX_MERGE + " per un video."); return; }
     setMergeErr(null); setMerging(true);
     try {
       const fresh = await freshSignedByLabel();
-      const mergeUrls = videoClips.map(function (c) { var uk = c.key || ((c.room_id || "") + ":" + (c.kind || "")); return fresh[uk] || c.url; });
+      const mergeUrls = videoClips.map(function (c) { return (c.label && fresh[c.label]) ? fresh[c.label] : c.url; });
       const url = await runMerge(mergeUrls);
       if (!url) throw new Error("Unione non riuscita.");
       setMergedUrl(url);
@@ -2026,42 +1859,11 @@ function BAMYachtApp() {
           });
         });
       });
-      const labelCount = {};
-      flat.forEach(function (x) { labelCount[x.label] = (labelCount[x.label] || 0) + 1; });
-      flat.forEach(function (x) {
-        if (x.label && labelCount[x.label] > 1 && x.created_at) {
-          var t = new Date(x.created_at);
-          x.dispLabel = x.label;
-        } else { x.dispLabel = x.label; }
-      });
       setArchive(flat);
     } catch (e) {
       setArchiveErr(e && e.message ? e.message : String(e));
     } finally {
       setArchiveBusy(false);
-    }
-  }
-
-  async function deleteSelected() {
-    if (!selected.length) return;
-    if (!window.confirm("Eliminare definitivamente " + selected.length + " foto dall'archivio? I video salvati NON vengono toccati.")) return;
-    setDelBusy(true);
-    try {
-      const BK = "dossier-images";
-      const map = {};
-      (archive || []).forEach(function (x) { map[x.id] = x; });
-      const ids = selected.slice();
-      const paths = [];
-      ids.forEach(function (id) { const r = map[id]; if (r) { if (r.before_path) paths.push(r.before_path); if (r.after_path) paths.push(r.after_path); } });
-      if (paths.length) { try { await supabaseClient.storage.from(BK).remove(paths); } catch (_) {} }
-      const delRes = await supabaseClient.from("dossier_rooms").delete().in("id", ids);
-      if (delRes.error) throw delRes.error;
-      setSelected([]); setSelMode(false); setArchiveOpen(null);
-      setArchive(null); await loadArchive();
-    } catch (e) {
-      setArchiveErr("Eliminazione non riuscita: " + (e && e.message ? e.message : String(e)));
-    } finally {
-      setDelBusy(false);
     }
   }
 
@@ -2126,8 +1928,8 @@ function BAMYachtApp() {
         React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6, flexWrap: "wrap", gap: 10 } },
           React.createElement("div", { style: { fontFamily: G, fontSize: 22, color: "#e8dcc8", fontWeight: 300, letterSpacing: ".05em" } }, "I miei dossier"),
           React.createElement("div", { style: { display: "flex", gap: 8 } },
-            archive && archive.length > 0 && React.createElement("button", { className: selMode ? "pbtn" : "sbtn", onClick: () => { setSelMode(!selMode); setVideoSelMode(false); setVideoSel([]); setSelected([]); setMergeSel([]); setArchiveOpen(null); } }, selMode ? "Annulla selezione" : "\u2713 Seleziona"),
-            archive && archive.length > 0 && React.createElement("button", { className: videoSelMode ? "pbtn" : "sbtn", onClick: () => { setVideoSelMode(!videoSelMode); setVideoSel([]); setSelMode(false); setSelected([]); setMergeSel([]); setArchiveOpen(null); }, disabled: videoBusy }, videoSelMode ? "Annulla video" : "\uD83C\uDFAC Video"),
+            archive && archive.length > 0 && React.createElement("button", { className: selMode ? "pbtn" : "sbtn", onClick: () => { setSelMode(!selMode); setVideoSelMode(false); setVideoSel([]); setSelected([]); setArchiveOpen(null); } }, selMode ? "Annulla selezione" : "\u2713 Seleziona"),
+            archive && archive.length > 0 && React.createElement("button", { className: videoSelMode ? "pbtn" : "sbtn", onClick: () => { setVideoSelMode(!videoSelMode); setVideoSel([]); setSelMode(false); setSelected([]); setArchiveOpen(null); }, disabled: videoBusy }, videoSelMode ? "Annulla video" : "\uD83C\uDFAC Video"),
             React.createElement("button", { className: "sbtn", onClick: () => { setArchive(null); setSelected([]); loadArchive(); }, disabled: archiveBusy }, "Aggiorna")
           )
         ),
@@ -2147,14 +1949,14 @@ function BAMYachtApp() {
                     React.createElement("img", { src: r.after_signed, alt: r.label, style: { width: "100%", height: 132, objectFit: "cover", display: "block", background: "#0b1020" } }),
                     selMode && React.createElement("div", { style: { position: "absolute", top: 8, right: 8, width: 27, height: 27, borderRadius: "50%", background: sel ? "#c9a84c" : "rgba(8,12,24,.62)", border: "1.5px solid " + (sel ? "#c9a84c" : "rgba(232,220,200,.55)"), color: "#060a14", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700 } }, sel ? "\u2713" : ""),
                     React.createElement("div", { style: { padding: "10px 12px" } },
-                      React.createElement("div", { style: { fontFamily: G, fontSize: 16, color: "#e8dcc8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, r.dispLabel || r.label || "Ambiente"),
+                      React.createElement("div", { style: { fontFamily: G, fontSize: 16, color: "#e8dcc8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, r.label || "Ambiente"),
                       React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.4)", marginTop: 3, letterSpacing: ".04em" } }, sub)
                     )
                   )
                 : React.createElement("div", null,
                     React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: "1px solid rgba(201,168,76,.12)", flexWrap: "wrap" } },
                       React.createElement("div", null,
-                        React.createElement("div", { style: { fontFamily: G, fontSize: 18, color: "#e8dcc8" } }, r.dispLabel || r.label || "Ambiente"),
+                        React.createElement("div", { style: { fontFamily: G, fontSize: 18, color: "#e8dcc8" } }, r.label || "Ambiente"),
                         React.createElement("div", { style: { fontSize: 11, color: "rgba(232,220,200,.4)", marginTop: 2, letterSpacing: ".04em" } }, sub)
                       ),
                       React.createElement("div", { style: { display: "flex", gap: 8 } },
@@ -2182,8 +1984,8 @@ function BAMYachtApp() {
         !archiveBusy && videoSelMode && archive && archive.length > 0 && (function () {
           const photos = [];
           archive.forEach(function (r) {
-            if (r.before_signed) photos.push({ key: r.id + ":before", label: (r.dispLabel || r.label || "Ambiente"), kindLabel: "Prima", url: r.before_signed, room_id: r.id, kind: "before" });
-            if (r.after_signed) photos.push({ key: r.id + ":after", label: (r.dispLabel || r.label || "Ambiente"), kindLabel: "Dopo", url: r.after_signed, room_id: r.id, kind: "after" });
+            if (r.before_signed) photos.push({ key: r.id + ":before", label: (r.label || "Ambiente"), kindLabel: "Prima", url: r.before_signed, room_id: r.id, kind: "before" });
+            if (r.after_signed) photos.push({ key: r.id + ":after", label: (r.label || "Ambiente"), kindLabel: "Dopo", url: r.after_signed, room_id: r.id, kind: "after" });
           });
           return React.createElement("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 12 } },
             photos.map(function (p) {
@@ -2206,7 +2008,7 @@ function BAMYachtApp() {
           mergedUrl && React.createElement("div", { style: { marginBottom: 16, padding: 12, border: "1px solid rgba(201,168,76,.45)", borderRadius: 6, background: "rgba(201,168,76,.06)" } },
             React.createElement("div", { style: { fontFamily: G, fontSize: 16, color: "#c9a84c", marginBottom: 8 } }, "\u2728 Video unico pronto"),
             React.createElement("video", { key: "merged", src: mergedUrl, controls: true, playsInline: true, style: { width: "100%", borderRadius: 6, background: "#000", display: "block" } }),
-            React.createElement("button", { onClick: function () { saveMerged(); }, disabled: dlBusy || !saveReady, style: { display: "inline-block", marginTop: 10, color: "#060a14", background: "#c9a84c", padding: "10px 16px", borderRadius: 4, border: "none", fontSize: 13, fontWeight: 600, cursor: "pointer" } }, (dlBusy || !saveReady) ? "Preparo\u2026" : "\u2193 Salva sull'iPad")
+            React.createElement("button", { onClick: function () { saveToDevice(mergedUrl, "BAM-video-unico.mp4"); }, disabled: dlBusy, style: { display: "inline-block", marginTop: 10, color: "#060a14", background: "#c9a84c", padding: "10px 16px", borderRadius: 4, border: "none", fontSize: 13, fontWeight: 600, cursor: "pointer" } }, dlBusy ? "Preparo\u2026" : "\u2193 Salva sull'iPad")
           ),
           mergeErr && React.createElement("div", { style: { color: "#e08a7a", fontSize: 13, marginBottom: 10, lineHeight: 1.5 } }, mergeErr),
           videoErr && React.createElement("div", { style: { color: "#e08a7a", fontSize: 13, marginBottom: 10, lineHeight: 1.5 } }, videoErr),
@@ -2237,18 +2039,6 @@ function BAMYachtApp() {
             !videoBusy && !merging && React.createElement("button", { className: "sbtn", onClick: resetVideoSession }, "Nuova sessione")
           )
         ),
-        merging && React.createElement("div", { style: { position: "fixed", left: 0, top: 0, right: 0, bottom: 0, zIndex: 9999, background: "rgba(6,10,20,.9)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 } },
-          React.createElement("div", { style: { maxWidth: 360, width: "100%", textAlign: "center", border: "1px solid rgba(201,168,76,.4)", borderRadius: 10, padding: 28, background: "#0b1020" } },
-            React.createElement("div", { className: "sp", style: { marginBottom: 18 } }),
-            React.createElement("div", { style: { fontFamily: G, fontSize: 20, color: "#c9a84c", marginBottom: 10, letterSpacing: ".03em" } }, "Sto montando il video"),
-            React.createElement("div", { style: { fontSize: 13, color: "#e8dcc8", lineHeight: 1.6, marginBottom: 18 } }, "Unisco le clip con dissolvenze e musica in qualita 2.5K. Tieni aperta questa pagina."),
-            React.createElement("div", { style: { fontFamily: "monospace", fontSize: 32, color: "#e8dcc8", letterSpacing: ".06em" } }, fmtSecs(mergeSecs)),
-            React.createElement("div", { style: { fontSize: 11.5, color: "rgba(232,220,200,.5)", marginTop: 4 } }, "tempo trascorso - di solito 2-4 minuti"),
-            React.createElement("div", { style: { height: 5, borderRadius: 3, background: "rgba(232,220,200,.12)", overflow: "hidden", marginTop: 18 } },
-              React.createElement("div", { style: { height: "100%", width: "35%", background: "#c9a84c", borderRadius: 3, animation: "bamslide 1.3s linear infinite" } })
-            )
-          )
-        ),
         videoSelMode && (savedBusy || (savedVideos && savedVideos.length > 0)) && React.createElement("div", { style: { marginTop: 18, border: "1px solid rgba(232,220,200,.14)", borderRadius: 6, padding: 16, background: "rgba(0,0,0,.16)" } },
           React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 } },
             React.createElement("div", { style: { fontFamily: G, fontSize: 17, color: "#e8dcc8" } }, "I tuoi video salvati"),
@@ -2257,36 +2047,25 @@ function BAMYachtApp() {
           savedBusy && React.createElement("div", { style: { fontSize: 12.5, color: "rgba(232,220,200,.5)" } }, "Carico\u2026"),
           savedVideos && savedVideos.length > 0 && React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
             savedVideos.map(function (v, i) {
-              const seld = mergeSel.indexOf(v.id || v.url) !== -1;
               return React.createElement("div", { key: v.id || i, style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, fontSize: 12.5, paddingBottom: 8, borderBottom: "1px solid rgba(232,220,200,.06)" } },
-                React.createElement("div", { onClick: function () { const k = v.id || v.url; setMergeSel(function (prev) { return prev.indexOf(k) !== -1 ? prev.filter(function (x) { return x !== k; }) : prev.concat([k]); }); }, style: { display: "flex", alignItems: "center", gap: 10, cursor: "pointer", flex: 1, minWidth: 0 } },
-                  React.createElement("span", { style: { flex: "0 0 auto", width: 18, height: 18, borderRadius: 4, border: "1.5px solid " + (seld ? "#c9a84c" : "rgba(232,220,200,.35)"), background: seld ? "#c9a84c" : "transparent", color: "#0b1020", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 } }, seld ? "\u2713" : ""),
-                  React.createElement("span", { style: { color: v.is_merged ? "#c9a84c" : "rgba(232,220,200,.78)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, (v.is_merged ? "\u2728 " : "") + (v.label || "Video") + (v.is_merged ? " (unico)" : ""))
-                ),
-                React.createElement("button", { onClick: function (e) { if (e && e.stopPropagation) e.stopPropagation(); saveToDevice(v.url, "BAM-video.mp4"); }, disabled: dlBusy, style: { color: "#c9a84c", background: "none", border: "none", whiteSpace: "nowrap", cursor: "pointer", fontSize: 12.5, padding: 0 } }, "salva")
+                React.createElement("span", { style: { color: v.is_merged ? "#c9a84c" : "rgba(232,220,200,.78)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" } }, (v.is_merged ? "\u2728 " : "") + (v.label || "Video") + (v.is_merged ? " (unico)" : "")),
+                React.createElement("button", { onClick: function () { saveToDevice(v.url, "BAM-video.mp4"); }, disabled: dlBusy, style: { color: "#c9a84c", background: "none", border: "none", whiteSpace: "nowrap", cursor: "pointer", fontSize: 12.5, padding: 0 } }, "salva")
               );
             })
           ),
-          (mergeSel.length > 0
-            ? React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8, marginTop: 12 } },
-                React.createElement("button", { className: "pbtn", onClick: mergeSelected, disabled: merging || videoBusy || mergeSel.length < 2 }, merging ? "Creo il video in 4K\u2026 (resta qui)" : "\u2728 Unisci selezionati (" + mergeSel.length + ")"),
-                React.createElement("button", { className: "sbtn", onClick: function () { setMergeSel([]); }, disabled: merging || videoBusy }, "Deseleziona"),
-                mergeSel.length < 2 && React.createElement("div", { style: { fontSize: 12, color: "rgba(232,220,200,.5)" } }, "Seleziona almeno 2 video per unirli.")
-              )
-            : (savedVideos && savedVideos.filter(function (v) { return !v.is_merged; }).length >= 2 && React.createElement("button", { className: "pbtn", onClick: mergeSaved, disabled: merging || videoBusy, style: { marginTop: 12 } }, merging ? "Creo il video in 4K\u2026 (resta qui)" : "\u2728 Unisci le clip salvate")))
+          savedVideos && savedVideos.filter(function (v) { return !v.is_merged; }).length >= 2 && React.createElement("button", { className: "pbtn", onClick: mergeSaved, disabled: merging || videoBusy, style: { marginTop: 12 } }, merging ? "Creo il video in 4K\u2026 (resta qui)" : "\u2728 Unisci le clip salvate")
         ),
         videoSelMode && archive && archive.length > 0 && React.createElement("div", { style: { position: "sticky", bottom: -1, marginTop: 18, paddingTop: 14, background: "linear-gradient(to top, #0b1020 72%, rgba(11,16,32,0))", display: "flex", flexDirection: "column", gap: 10 } },
           React.createElement("div", { style: { fontSize: 12, color: "#c9a84c", letterSpacing: ".06em" } }, videoSel.length === 0 ? "Nessuna foto selezionata" : (videoSel.length === 1 ? "1 foto selezionata" : videoSel.length + " foto selezionate")),
           React.createElement("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" } },
             React.createElement("button", { className: "sbtn", onClick: function () { setVideoSel([]); }, disabled: !videoSel.length || videoBusy }, "Deseleziona"),
-            React.createElement("button", { className: "pbtn", onClick: function () { const ph = {}; (archive || []).forEach(function (r) { if (r.before_signed) ph[r.id + ":before"] = { key: r.id + ":before", label: (r.dispLabel || r.label || "Ambiente") + " \u00B7 Prima", url: r.before_signed, room_id: r.id, kind: "before" }; if (r.after_signed) ph[r.id + ":after"] = { key: r.id + ":after", label: (r.dispLabel || r.label || "Ambiente") + " \u00B7 Dopo", url: r.after_signed, room_id: r.id, kind: "after" }; }); const items = videoSel.map(function (k) { return ph[k]; }).filter(Boolean); if (items.length) createVideos(items); }, disabled: videoBusy || videoSel.length === 0 }, videoBusy ? "Genero video\u2026" : "\uD83C\uDFAC Crea video (" + videoSel.length + ")")
+            React.createElement("button", { className: "pbtn", onClick: function () { const ph = {}; (archive || []).forEach(function (r) { if (r.before_signed) ph[r.id + ":before"] = { key: r.id + ":before", label: (r.label || "Ambiente") + " \u00B7 Prima", url: r.before_signed, room_id: r.id, kind: "before" }; if (r.after_signed) ph[r.id + ":after"] = { key: r.id + ":after", label: (r.label || "Ambiente") + " \u00B7 Dopo", url: r.after_signed, room_id: r.id, kind: "after" }; }); const items = videoSel.map(function (k) { return ph[k]; }).filter(Boolean); if (items.length) createVideos(items); }, disabled: videoBusy || videoSel.length === 0 }, videoBusy ? "Genero video\u2026" : "\uD83C\uDFAC Crea video (" + videoSel.length + ")")
           )
         ),
         selMode && archive && archive.length > 0 && React.createElement("div", { style: { position: "sticky", bottom: -1, marginTop: 18, paddingTop: 14, background: "linear-gradient(to top, #0b1020 72%, rgba(11,16,32,0))", display: "flex", flexDirection: "column", gap: 10 } },
           React.createElement("div", { style: { fontSize: 12, color: "#c9a84c", letterSpacing: ".06em" } }, selected.length === 0 ? "Nessun render selezionato" : (selected.length === 1 ? "1 render selezionato" : selected.length + " render selezionati")),
           React.createElement("input", { className: "inp", type: "text", placeholder: "Titolo del dossier (es. M/Y SISA)", value: pdfTitle, onChange: (e) => setPdfTitle(e.target.value) }),
           React.createElement("div", { style: { display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" } },
-            React.createElement("button", { className: "sbtn", onClick: deleteSelected, disabled: !selected.length || delBusy, style: { borderColor: "rgba(220,80,80,.55)", color: "#e08080" } }, delBusy ? "Elimino\u2026" : ("\uD83D\uDDD1 Elimina (" + selected.length + ")")),
             React.createElement("button", { className: "sbtn", onClick: () => setSelected([]), disabled: !selected.length }, "Deseleziona"),
             React.createElement("button", { className: "sbtn", onClick: () => { const map = {}; (archive || []).forEach(function (x) { map[x.id] = x; }); const rs = selected.map(function (id) { return map[id]; }).filter(Boolean); if (rs.length) createShare(rs, pdfTitle); }, disabled: shareBusy || selected.length === 0 }, shareBusy ? "Creo link\u2026" : "\uD83D\uDD17 Crea link"),
             React.createElement("button", { className: "pbtn", onClick: () => { const map = {}; (archive || []).forEach(function (x) { map[x.id] = x; }); const rs = selected.map(function (id) { return map[id]; }).filter(Boolean); if (rs.length) composePDF(rs, pdfTitle); }, disabled: composing || selected.length === 0 }, composing ? "Creazione PDF\u2026" : "\u2193 Crea PDF (" + selected.length + ")")
@@ -2394,7 +2173,7 @@ function BAMYachtApp() {
               recent.map(function (r, i) {
                 return React.createElement("div", { key: i, style: { display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 12px", background: "rgba(0,0,0,.16)", border: "1px solid rgba(201,168,76,.1)", borderRadius: 3, flexWrap: "wrap" } },
                   React.createElement("div", { style: { minWidth: 0 } },
-                    React.createElement("div", { style: { fontFamily: G, fontSize: 15, color: "#e8dcc8" } }, r.dispLabel || r.label || "Ambiente"),
+                    React.createElement("div", { style: { fontFamily: G, fontSize: 15, color: "#e8dcc8" } }, r.label || "Ambiente"),
                     r.caption && React.createElement("div", { style: { fontSize: 11.5, color: "rgba(232,220,200,.42)", marginTop: 2, lineHeight: 1.4, maxWidth: 560, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, r.caption)
                   ),
                   React.createElement("div", { style: { textAlign: "right", whiteSpace: "nowrap" } },
@@ -2489,7 +2268,7 @@ function BAMYachtApp() {
         ),
         React.createElement("input", { ref: fileRef, type: "file", accept: "image/*", multiple: true, style: { display: "none" }, onChange: (e) => { var fs = e.target.files; if (fs && fs.length > 1) { loadFilesBatch(fs); } else { setBatchPhotos([]); loadFile(fs && fs[0]); } } }),
         React.createElement("div", { style: { marginBottom: 18 } },
-          batchPhotos.length > 0 && React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginTop: 14, marginBottom: 16 } },
+          batchPhotos.length > 0 && React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center", marginBottom: 16 } },
             batchPhotos.map(function (p, i) {
               return React.createElement("div", { key: i, style: { position: "relative" } },
                 React.createElement("img", { src: p.data, style: { width: 76, height: 56, objectFit: "cover", borderRadius: 3, border: "1px solid rgba(201,168,76,.3)" } }),
