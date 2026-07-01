@@ -75,16 +75,27 @@ footer{border-top:1px solid rgba(201,168,76,.07);padding:24px 20px;text-align:ce
   const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   window.supabaseClient = supabaseClient;
 
+  // Rilevo il ritorno dal link di reset: il token di recovery e' nell'URL (hash o query).
+  function bamIsRecoveryUrl() {
+    try { return /type=recovery/.test(location.hash || "") || /type=recovery/.test(location.search || ""); }
+    catch (_) { return false; }
+  }
+
+  // Il listener va registrato SUBITO, prima di qualsiasi await: l'evento PASSWORD_RECOVERY
+  // scatta all'apertura del link e, se il listener arriva dopo, viene perso (il form non si apre).
+  supabaseClient.auth.onAuthStateChange((event) => {
+    if (event === 'PASSWORD_RECOVERY') { showRecoveryGate(); return; }
+    if (event === 'SIGNED_OUT') { try { var _lr = +sessionStorage.getItem('bam_auth_reload') || 0; if (Date.now() - _lr > 4000) { sessionStorage.setItem('bam_auth_reload', String(Date.now())); location.reload(); } } catch (_) { location.reload(); } }
+  });
+
   (async function authGate() {
     if (new URLSearchParams(location.search).has('s')) return; // pagina pubblica: niente login
+    // Rete di sicurezza: se arrivo dal link di reset, apro comunque il form nuova password.
+    if (bamIsRecoveryUrl()) { showRecoveryGate(); return; }
     const { data: { session } } = await supabaseClient.auth.getSession();
     if (!session) {
       showLoginGate();
     }
-    supabaseClient.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') { showRecoveryGate(); return; }
-      if (event === 'SIGNED_OUT') { try { var _lr = +sessionStorage.getItem('bam_auth_reload') || 0; if (Date.now() - _lr > 4000) { sessionStorage.setItem('bam_auth_reload', String(Date.now())); location.reload(); } } catch (_) { location.reload(); } }
-    });
   })();
 
   function showLoginGate() {
