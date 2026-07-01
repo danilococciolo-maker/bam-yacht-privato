@@ -82,6 +82,7 @@ footer{border-top:1px solid rgba(201,168,76,.07);padding:24px 20px;text-align:ce
       showLoginGate();
     }
     supabaseClient.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') { showRecoveryGate(); return; }
       if (event === 'SIGNED_OUT') { try { var _lr = +sessionStorage.getItem('bam_auth_reload') || 0; if (Date.now() - _lr > 4000) { sessionStorage.setItem('bam_auth_reload', String(Date.now())); location.reload(); } } catch (_) { location.reload(); } }
     });
   })();
@@ -105,6 +106,9 @@ footer{border-top:1px solid rgba(201,168,76,.07);padding:24px 20px;text-align:ce
             <label style="display:block;font-family:'Cormorant Garamond',serif;font-size:10px;letter-spacing:.22em;color:rgba(201,168,76,.55);text-transform:uppercase;margin-bottom:6px">Password</label>
             <input type="password" class="inp" id="bam-login-password" required style="margin-bottom:22px" />
             <button type="submit" class="gbtn" style="width:100%">Accedi</button>
+            <div style="text-align:center;margin-top:14px">
+              <a id="bam-forgot" href="#" style="font-family:'Cormorant Garamond',serif;font-size:12px;letter-spacing:.08em;color:rgba(201,168,76,.7);text-decoration:none;cursor:pointer">Password dimenticata?</a>
+            </div>
           </form>
           <form id="bam-form-signup" style="display:none">
             <label style="display:block;font-family:'Cormorant Garamond',serif;font-size:10px;letter-spacing:.22em;color:rgba(201,168,76,.55);text-transform:uppercase;margin-bottom:6px">Nome e cognome</label>
@@ -183,6 +187,15 @@ footer{border-top:1px solid rgba(201,168,76,.07);padding:24px 20px;text-align:ce
         msg.textContent = '✕ ' + error.message;
         return;
       }
+      // Supabase, per privacy, NON restituisce errore se l'email esiste gia':
+      // ritorna un user con identities vuoto. In quel caso instradiamo al login.
+      if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+        msg.style.color = '#c9a84c';
+        msg.textContent = 'Questa email risulta già registrata. Usa \u201CAccedi\u201D (o \u201CPassword dimenticata?\u201D).';
+        tabLogin.click();
+        var _le = document.getElementById('bam-login-email'); if (_le) _le.value = email;
+        return;
+      }
       if (data.user) {
         await supabaseClient.from('profiles').update({
           full_name, company_name, role
@@ -190,6 +203,70 @@ footer{border-top:1px solid rgba(201,168,76,.07);padding:24px 20px;text-align:ce
       }
       msg.style.color = '#9bc26a';
       msg.textContent = '✓ Account creato. Controlla la tua email per confermare e poi accedi.';
+    };
+
+    // --- Password dimenticata: invia il link di reset all'email digitata ---
+    var forgot = document.getElementById('bam-forgot');
+    if (forgot) forgot.onclick = async (e) => {
+      e.preventDefault();
+      if (!tabLogin.classList.contains('on')) tabLogin.click();
+      const email = (document.getElementById('bam-login-email').value || '').trim();
+      if (!email) {
+        msg.style.color = '#c9a84c';
+        msg.textContent = 'Scrivi prima la tua email qui sopra, poi tocca di nuovo “Password dimenticata?”.';
+        document.getElementById('bam-login-email').focus();
+        return;
+      }
+      msg.style.color = 'rgba(232,220,200,.6)';
+      msg.textContent = 'Invio del link di reset in corso…';
+      const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { redirectTo: location.origin });
+      if (error) {
+        msg.style.color = '#e07a7a';
+        msg.textContent = '✕ ' + (error.message || 'Errore invio email');
+      } else {
+        msg.style.color = '#9bc26a';
+        msg.textContent = '✓ Ti abbiamo inviato un link per reimpostare la password. Controlla la posta (anche lo spam).';
+      }
+    };
+  }
+
+  // Overlay dedicato: compare quando l'utente torna dal link di reset email.
+  function showRecoveryGate() {
+    if (document.getElementById('bam-recovery-overlay')) return;
+    const html = `
+      <div id="bam-recovery-overlay" style="position:fixed;inset:0;background:rgba(26,37,64,.98);backdrop-filter:blur(12px);z-index:10000;display:flex;align-items:center;justify-content:center;padding:24px;font-family:'Crimson Text',Georgia,serif">
+        <div style="background:linear-gradient(180deg,#1c2c4a,#1a2540);border:1px solid rgba(201,168,76,.18);border-radius:4px;max-width:460px;width:100%;padding:44px 36px;color:#e8dcc8">
+          <div style="text-align:center;margin-bottom:28px">
+            <img src="${window.__LOGO_WHITE__}" alt="BAM Group" style="height:56px;width:auto;display:block;margin:0 auto 18px;max-width:80%"/>
+            <div style="font-family:'Cormorant Garamond',serif;font-size:15px;font-weight:400;letter-spacing:.36em;color:#c9a84c;text-transform:uppercase;margin-bottom:8px">Nuova password</div>
+            <div style="font-family:'Cormorant Garamond',serif;font-size:10px;letter-spacing:.28em;color:rgba(232,220,200,.5);text-transform:uppercase">Imposta una nuova password per accedere</div>
+          </div>
+          <form id="bam-form-recovery">
+            <label style="display:block;font-family:'Cormorant Garamond',serif;font-size:10px;letter-spacing:.22em;color:rgba(201,168,76,.55);text-transform:uppercase;margin-bottom:6px">Nuova password (min. 8)</label>
+            <input type="password" class="inp" id="bam-recovery-pw" required minlength="8" style="margin-bottom:14px" />
+            <label style="display:block;font-family:'Cormorant Garamond',serif;font-size:10px;letter-spacing:.22em;color:rgba(201,168,76,.55);text-transform:uppercase;margin-bottom:6px">Conferma password</label>
+            <input type="password" class="inp" id="bam-recovery-pw2" required minlength="8" style="margin-bottom:22px" />
+            <button type="submit" class="gbtn" style="width:100%">Salva e accedi</button>
+          </form>
+          <div id="bam-recovery-msg" style="margin-top:18px;text-align:center;font-size:13px;min-height:20px;font-family:'Crimson Text',serif"></div>
+        </div>
+      </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+    const rmsg = document.getElementById('bam-recovery-msg');
+    document.getElementById('bam-form-recovery').onsubmit = async (e) => {
+      e.preventDefault();
+      const pw = document.getElementById('bam-recovery-pw').value;
+      const pw2 = document.getElementById('bam-recovery-pw2').value;
+      if (pw !== pw2) { rmsg.style.color = '#e07a7a'; rmsg.textContent = '✕ Le due password non coincidono'; return; }
+      rmsg.style.color = 'rgba(232,220,200,.6)';
+      rmsg.textContent = 'Salvataggio in corso…';
+      const { error } = await supabaseClient.auth.updateUser({ password: pw });
+      if (error) { rmsg.style.color = '#e07a7a'; rmsg.textContent = '✕ ' + (error.message || 'Errore'); return; }
+      rmsg.style.color = '#9bc26a';
+      rmsg.textContent = '✓ Password aggiornata. Accesso in corso…';
+      try { history.replaceState(null, '', location.origin + location.pathname); } catch (_) {}
+      setTimeout(() => location.replace(location.origin + location.pathname), 900);
     };
   }
 </script>
