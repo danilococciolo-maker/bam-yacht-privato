@@ -713,6 +713,69 @@ function BAMYachtApp() {
   const [videoLog, setVideoLog] = useState([]);
   const [videoClips, setVideoClips] = useState([]);
   const [videoIdx, setVideoIdx] = useState(0);
+  // --- CONVERSAZIONALE A STATO + VERSIONI (solo interfaccia; motore di render invariato) ---
+  const [versions, setVersions] = useState([]);        // { url, b64, styleLabel, refit, ts }
+  const [refineText, setRefineText] = useState("");
+  const [refineSeq, setRefineSeq] = useState(0);
+  const [activeChips, setActiveChips] = useState([]);
+  const prevResultRef = useRef(null);
+  const genActiveRef = useRef(false);
+  const selectingRef = useRef(false);
+  const metaRef = useRef({ styleLabel: "", refit: "" });
+  // metaRef sempre aggiornato ai valori correnti (evita closure stantie nella registrazione versione)
+  useEffect(() => { metaRef.current = { styleLabel: styleLabel, refit: refitText }; });
+  // Nuova foto o foto rimossa -> azzero la cronologia versioni della sessione precedente
+  useEffect(() => { setVersions([]); prevResultRef.current = null; genActiveRef.current = false; }, [img]);
+  // Registro ogni render prodotto dal motore come nuova versione, SENZA toccare generate()
+  useEffect(() => {
+    const prev = prevResultRef.current;
+    prevResultRef.current = result;
+    if (selectingRef.current) { selectingRef.current = false; return; }
+    if (result === null) { genActiveRef.current = true; return; }
+    if (genActiveRef.current && prev === null) {
+      genActiveRef.current = false;
+      const meta = metaRef.current;
+      setVersions(function (v) { return v.concat([{ url: result, b64: resultB64 || null, styleLabel: meta.styleLabel, refit: meta.refit, ts: Date.now() }]); });
+    } else {
+      setVersions(function (v) { return v.length ? v.map(function (x, i) { return i === v.length - 1 ? Object.assign({}, x, { url: result }) : x; }) : v; });
+    }
+  }, [result]);
+  // Tengo aggiornato il base64 (serve al PDF) sull'ultima versione registrata
+  useEffect(() => {
+    if (!resultB64) return;
+    setVersions(function (v) { return v.length ? v.map(function (x, i) { return i === v.length - 1 ? Object.assign({}, x, { b64: resultB64 }) : x; }) : v; });
+  }, [resultB64]);
+  // Affinamento: accumulo la richiesta e rigenero DALLA FOTO ORIGINALE (generate parte sempre da img)
+  useEffect(() => {
+    if (refineSeq === 0) return;
+    generate();
+  }, [refineSeq]);
+  const REFINE_CHIPS = ["pavimento più chiaro", "pareti crema", "via il legno scuro", "legno chiaro rovere", "dettagli in marmo", "luce calda soffusa", "tessuti bianchi", "stile più moderno"];
+  function toggleChip(c) {
+    setActiveChips(function (list) { return list.indexOf(c) >= 0 ? list.filter(function (x) { return x !== c; }) : list.concat([c]); });
+  }
+  function handleRefine() {
+    const parts = activeChips.slice();
+    const extra = refineText.trim();
+    if (extra) parts.push(extra);
+    const affinamento = parts.join(", ");
+    if (!affinamento || busy) return;
+    const base = (refitText || "").trim();
+    const combined = base ? (base + ". Affinamento richiesto: " + affinamento) : affinamento;
+    setRefitText(combined);
+    setRefineText("");
+    setActiveChips([]);
+    setRefineSeq(function (s) { return s + 1; });
+  }
+  function selectVersion(i) {
+    const ver = versions[i];
+    if (!ver) return;
+    selectingRef.current = true;
+    setResult(ver.url);
+    setResultB64(ver.b64 || null);
+    setStyleLabel(ver.styleLabel || styleLabel);
+    if (ver.refit) setRefitText(ver.refit);
+  }
   const [mergedUrl, setMergedUrl] = useState(null);
   const [merging, setMerging] = useState(false);
   const [mergeErr, setMergeErr] = useState(null);
@@ -981,7 +1044,7 @@ function BAMYachtApp() {
       if (!styleClause) styleClause = stylePreset || "refit elegante";
       var alreadyGone = removals.length ? " The following item(s) MUST stay completely absent: " + removals.join("; ") + "." : "";
       var keepClause = keeps.length ? " CRITICAL - do NOT remove or replace these pieces, they MUST stay present and in place: " + keeps.join("; ") + "." : "";
-      var SCAFFOLD = "Photorealistic refit of THIS exact yacht interior shown in the image. ABSOLUTE RULES, in order of priority: (1) Keep the room architecture, walls, ceiling, every window and porthole, the exact view seen OUTSIDE through the windows, and the camera viewpoint and perspective IDENTICAL to the original photo. (2) Do NOT empty or simplify the room and do NOT redesign it from scratch: every sofa, armchair, chair, table and lamp that exists in the image must still be present and in the same position in the result, UNLESS the user explicitly asks to remove or move that specific piece. (3) Carry out EVERY change the user lists below as a MANDATORY instruction. Restyle the pieces that stay (colours, fabrics, materials, finishes, lighting) as described. (4) If the user asks for a lighter or different finish, apply it to the ENTIRE room and to EVERY wooden element so that NO original dark or warm-orange wood is left anywhere (unless the user asked to keep wood). The room must remain fully furnished, lived-in and realistic - never a bare empty room.";
+      var SCAFFOLD = "Photorealistic refit of THIS exact yacht interior shown in the image. ABSOLUTE RULES, in order of priority: (1) Keep the room architecture, walls, ceiling, every window and porthole, the exact view seen OUTSIDE through the windows, and the camera viewpoint and perspective IDENTICAL to the original photo. CURTAINS AND DRAPES: keep every curtain, drape and valance in the EXACT same position, shape, length, folds and window coverage as in the original photo - never open, close, slide, re-drape, resize or reshape them, and never change which part of the window they cover or leave clear; only their fabric colour or material may change, and only if the user asks. Keep every window opening in its exact original rectangular shape with straight edges - do not curve, round or reshape the window outline where it meets the curtains. (2) Do NOT empty or simplify the room and do NOT redesign it from scratch: every sofa, armchair, chair, table and lamp that exists in the image must still be present and in the same position in the result, UNLESS the user explicitly asks to remove or move that specific piece. (3) Carry out EVERY change the user lists below as a MANDATORY instruction. Restyle the pieces that stay (colours, fabrics, materials, finishes, lighting) as described. (4) If the user asks for a lighter or different finish, apply it to the ENTIRE room and to EVERY wooden element so that NO original dark or warm-orange wood is left anywhere (unless the user asked to keep wood). The room must remain fully furnished, lived-in and realistic - never a bare empty room.";
       function buildPrompt(extra) { return SCAFFOLD + alreadyGone + keepClause + " User's requested changes: " + styleClause + "." + (extra || "") + " The result must be a believable, fully-furnished luxury yacht interior, professional architectural photography, ultra detailed."; }
       async function runEditB(endpoint, prompt, imgs) {
         var p = await replicateCreate(endpoint, token, { input: { prompt: prompt, image_input: imgs } });
@@ -1122,7 +1185,7 @@ function BAMYachtApp() {
       const keepClause = keeps.length
         ? " CRITICAL - do NOT remove or replace these pieces, they MUST stay present and in place: " + keeps.join("; ") + "."
         : "";
-      const editPrompt = "Photorealistic refit of THIS exact yacht interior shown in the image. ABSOLUTE RULES, in order of priority: (1) Keep the room architecture, walls, ceiling, every window and porthole, the exact view seen OUTSIDE through the windows, and the camera viewpoint and perspective IDENTICAL to the original photo. (2) Do NOT empty or simplify the room and do NOT redesign it from scratch: every sofa, armchair, chair, table and lamp that exists in the image must still be present and in the same position in the result, UNLESS the user explicitly asks to remove or move that specific piece. (3) Carry out EVERY change the user lists below as a MANDATORY instruction, not an optional suggestion. In particular: if the user asks to REMOVE a specific item, that item MUST be completely absent from the result (replace the area with floor/empty space that matches the room) and every OTHER piece stays; if the user asks to MOVE or ROTATE a piece, reposition that piece accordingly while keeping the rest; if the user asks to ADD, SWAP or MODERNISE something (e.g. lamps), do exactly that. Make only the changes the user lists, nothing more. Restyle the pieces that stay (colours, fabrics, materials, finishes, lighting) as described. (4) If the user asks for a lighter or different finish, apply it to the ENTIRE room and to EVERY wooden element - all wall and ceiling panels, all wood trim, mouldings and borders, the ceiling coffer/border, door frames and doors, window frames, handrails, the nightstands, the headboard and its surround, and all built-in cabinetry - so that NO original dark or warm-orange wood is left anywhere in the result (unless the user asked to keep wood). Do not leave wood trim, frames or the ceiling border in the old finish: convert them too. The room must remain fully furnished, lived-in and realistic - never a bare empty room." + alreadyGone + keepClause + " User's requested changes: " + styleClause + ". The result must be a believable, fully-furnished luxury yacht interior, professional architectural photography, ultra detailed.";
+      const editPrompt = "Photorealistic refit of THIS exact yacht interior shown in the image. ABSOLUTE RULES, in order of priority: (1) Keep the room architecture, walls, ceiling, every window and porthole, the exact view seen OUTSIDE through the windows, and the camera viewpoint and perspective IDENTICAL to the original photo. CURTAINS AND DRAPES: keep every curtain, drape and valance in the EXACT same position, shape, length, folds and window coverage as in the original photo - never open, close, slide, re-drape, resize or reshape them, and never change which part of the window they cover or leave clear; only their fabric colour or material may change, and only if the user asks. Keep every window opening in its exact original rectangular shape with straight edges - do not curve, round or reshape the window outline where it meets the curtains. (2) Do NOT empty or simplify the room and do NOT redesign it from scratch: every sofa, armchair, chair, table and lamp that exists in the image must still be present and in the same position in the result, UNLESS the user explicitly asks to remove or move that specific piece. (3) Carry out EVERY change the user lists below as a MANDATORY instruction, not an optional suggestion. In particular: if the user asks to REMOVE a specific item, that item MUST be completely absent from the result (replace the area with floor/empty space that matches the room) and every OTHER piece stays; if the user asks to MOVE or ROTATE a piece, reposition that piece accordingly while keeping the rest; if the user asks to ADD, SWAP or MODERNISE something (e.g. lamps), do exactly that. Make only the changes the user lists, nothing more. Restyle the pieces that stay (colours, fabrics, materials, finishes, lighting) as described. (4) If the user asks for a lighter or different finish, apply it to the ENTIRE room and to EVERY wooden element - all wall and ceiling panels, all wood trim, mouldings and borders, the ceiling coffer/border, door frames and doors, window frames, handrails, the nightstands, the headboard and its surround, and all built-in cabinetry - so that NO original dark or warm-orange wood is left anywhere in the result (unless the user asked to keep wood). Do not leave wood trim, frames or the ceiling border in the old finish: convert them too. The room must remain fully furnished, lived-in and realistic - never a bare empty room." + alreadyGone + keepClause + " User's requested changes: " + styleClause + ". The result must be a believable, fully-furnished luxury yacht interior, professional architectural photography, ultra detailed.";
 
       // runEdit generico: stesso modello, ma prompt e immagine di partenza variabili.
       async function runEdit(endpoint, prompt, baseImage) {
@@ -2387,6 +2450,29 @@ function BAMYachtApp() {
           React.createElement("button", { onClick: () => setCompareMode(false), title: "Torna al render", style: { position: "absolute", top: 12, left: 12, width: 40, height: 40, background: "rgba(8,12,24,.86)", border: "1px solid rgba(201,168,76,.5)", color: "#c9a84c", borderRadius: 3, cursor: "pointer", fontSize: 17, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)", zIndex: 5 } }, "\u00D7"),
           React.createElement("div", { style: { position: "absolute", top: 12, left: 60, background: "rgba(8,12,24,.72)", padding: "4px 12px", fontSize: 10, letterSpacing: ".2em", color: "rgba(232,220,200,.6)", textTransform: "uppercase", borderRadius: 2 } }, "Prima"),
           React.createElement("div", { style: { position: "absolute", top: 12, right: 12, background: "rgba(201,168,76,.86)", padding: "4px 12px", fontSize: 10, letterSpacing: ".18em", color: "#060a14", textTransform: "uppercase", borderRadius: 2, fontWeight: 600 } }, styleLabel)
+        ),
+        versions.length > 0 && React.createElement("div", { style: { display: "flex", gap: 10, marginTop: 20, flexWrap: "wrap", alignItems: "center", justifyContent: "center" } },
+          versions.map(function (ver, i) {
+            return React.createElement("button", {
+              key: i,
+              onClick: function () { selectVersion(i); },
+              title: "Versione " + (i + 1),
+              style: { width: 82, height: 54, padding: 0, borderRadius: 4, overflow: "hidden", cursor: "pointer", border: (result === ver.url ? "2px solid #c9a84c" : "1px solid rgba(232,220,200,.22)"), background: "#0b1020", position: "relative", flex: "0 0 auto" }
+            },
+              React.createElement("img", { src: ver.url, alt: "Versione " + (i + 1), style: { width: "100%", height: "100%", objectFit: "cover", display: "block", opacity: (result === ver.url ? 1 : .72) } }),
+              React.createElement("span", { style: { position: "absolute", bottom: 2, right: 4, fontSize: 9, letterSpacing: ".05em", color: "#e8dcc8", textShadow: "0 1px 2px #000" } }, "v" + (i + 1))
+            );
+          })
+        ),
+        result && React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginTop: 20 } },
+          REFINE_CHIPS.map(function (c) {
+            const on = activeChips.indexOf(c) >= 0;
+            return React.createElement("button", { key: c, onClick: function () { toggleChip(c); }, disabled: busy, style: { padding: "6px 13px", fontSize: 12, borderRadius: 15, cursor: "pointer", border: (on ? "1px solid #c9a84c" : "1px solid rgba(232,220,200,.22)"), background: (on ? "rgba(201,168,76,.18)" : "transparent"), color: (on ? "#c9a84c" : "rgba(232,220,200,.7)"), letterSpacing: ".02em", transition: "all .15s" } }, c);
+          })
+        ),
+        result && React.createElement("div", { style: { marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center", alignItems: "center" } },
+          React.createElement("input", { type: "text", value: refineText, disabled: busy, onChange: function (e) { setRefineText(e.target.value); }, onKeyDown: function (e) { if (e.key === "Enter") handleRefine(); }, placeholder: "Affina questo render (es. pavimento più chiaro, divani più grandi)…", className: "inp", style: { flex: "1 1 320px", maxWidth: 520, marginBottom: 0 } }),
+          React.createElement("button", { className: "pbtn", onClick: handleRefine, disabled: busy || !refineText.trim() }, busy ? "Genero…" : "↻ Affina")
         ),
         React.createElement("div", { style: { display: "flex", justifyContent: "center", gap: 12, marginTop: 24, flexWrap: "wrap" } },
           React.createElement("button", { className: "pbtn", onClick: downloadPDF, disabled: pdfBusy || !resultB64 }, pdfBusy ? "Creazione PDF…" : !resultB64 ? "Preparazione PDF…" : "↓ Scarica PDF"),
