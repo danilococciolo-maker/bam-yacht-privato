@@ -75,10 +75,29 @@ footer{border-top:1px solid rgba(201,168,76,.07);padding:24px 20px;text-align:ce
   const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   window.supabaseClient = supabaseClient;
 
-  // Rilevo il ritorno dal link di reset: il token di recovery e' nell'URL (hash o query).
+  // Estraggo dai parametri dell'URL (hash o query) tutto cio' che serve per il reset password.
+  // Supabase puo' usare formati diversi: token_hash (verifyOtp), code (PKCE), access_token (implicit).
+  function bamScanRecovery() {
+    var out = { type: null, token_hash: null, code: null, access_token: null, error: null, error_desc: null };
+    function scan(raw) {
+      if (!raw) return;
+      try {
+        var p = new URLSearchParams(String(raw).replace(/^[#?]/, ''));
+        if (p.get('type')) out.type = p.get('type');
+        if (p.get('token_hash')) out.token_hash = p.get('token_hash');
+        if (p.get('code')) out.code = p.get('code');
+        if (p.get('access_token')) out.access_token = p.get('access_token');
+        if (p.get('error')) out.error = p.get('error');
+        if (p.get('error_code') && !out.error) out.error = p.get('error_code');
+        if (p.get('error_description')) out.error_desc = p.get('error_description');
+      } catch (_) {}
+    }
+    scan(location.hash); scan(location.search);
+    return out;
+  }
   function bamIsRecoveryUrl() {
-    try { return /type=recovery/.test(location.hash || "") || /type=recovery/.test(location.search || ""); }
-    catch (_) { return false; }
+    var r = bamScanRecovery();
+    return !!(r.error || r.token_hash || r.code || r.access_token || r.type === 'recovery');
   }
 
   // Il listener va registrato SUBITO, prima di qualsiasi await: l'evento PASSWORD_RECOVERY
@@ -88,10 +107,32 @@ footer{border-top:1px solid rgba(201,168,76,.07);padding:24px 20px;text-align:ce
     if (event === 'SIGNED_OUT') { try { var _lr = +sessionStorage.getItem('bam_auth_reload') || 0; if (Date.now() - _lr > 4000) { sessionStorage.setItem('bam_auth_reload', String(Date.now())); location.reload(); } } catch (_) { location.reload(); } }
   });
 
+  // Gestione completa del ritorno dal link "reimposta password", qualunque sia il formato del link.
+  async function bamHandleRecovery(r) {
+    // Link scaduto/gia' usato/non valido: messaggio chiaro invece di pagina vuota.
+    if (r.error) { showRecoveryError(r.error_desc || r.error); return; }
+    // Stabilisco la sessione di recupero a seconda del formato del link.
+    try {
+      if (r.token_hash) {
+        await supabaseClient.auth.verifyOtp({ type: 'recovery', token_hash: r.token_hash });
+      } else if (r.code) {
+        await supabaseClient.auth.exchangeCodeForSession(r.code);
+      }
+      // Formato implicit (access_token nell'hash): gia' gestito in automatico dal client.
+    } catch (e) {
+      try { console.warn('recovery verify error', e && e.message); } catch (_) {}
+    }
+    showRecoveryGate();
+  }
+
   (async function authGate() {
     if (new URLSearchParams(location.search).has('s')) return; // pagina pubblica: niente login
-    // Rete di sicurezza: se arrivo dal link di reset, apro comunque il form nuova password.
-    if (bamIsRecoveryUrl()) { showRecoveryGate(); return; }
+    // Se arrivo dal link di reset (in qualunque formato), gestisco il recupero e apro il form.
+    var _rec = bamScanRecovery();
+    if (_rec.error || _rec.token_hash || _rec.code || _rec.access_token || _rec.type === 'recovery') {
+      await bamHandleRecovery(_rec);
+      return;
+    }
     const { data: { session } } = await supabaseClient.auth.getSession();
     if (!session) {
       showLoginGate();
@@ -242,6 +283,24 @@ footer{border-top:1px solid rgba(201,168,76,.07);padding:24px 20px;text-align:ce
   }
 
   // Overlay dedicato: compare quando l'utente torna dal link di reset email.
+  function showRecoveryError(msg) {
+    if (document.getElementById('bam-recovery-overlay')) return;
+    var safe = String(msg || 'Link non valido o scaduto.').replace(/</g,'&lt;');
+    const html = `
+      <div id="bam-recovery-overlay" style="position:fixed;inset:0;background:rgba(26,37,64,.98);backdrop-filter:blur(12px);z-index:10000;display:flex;align-items:center;justify-content:center;padding:24px;font-family:'Crimson Text',Georgia,serif">
+        <div style="background:linear-gradient(180deg,#1c2c4a,#1a2540);border:1px solid rgba(201,168,76,.18);border-radius:4px;max-width:460px;width:100%;padding:44px 36px;color:#e8dcc8;text-align:center">
+          <img src="${window.__LOGO_WHITE__}" alt="BAM Group" style="height:56px;width:auto;display:block;margin:0 auto 18px;max-width:80%"/>
+          <div style="font-family:'Cormorant Garamond',serif;font-size:15px;letter-spacing:.36em;color:#c9a84c;text-transform:uppercase;margin-bottom:14px">Link non valido</div>
+          <div style="font-size:14px;line-height:1.5;margin-bottom:24px;color:rgba(232,220,200,.85)">Il link per reimpostare la password &egrave; scaduto o &egrave; gi&agrave; stato usato. Richiedine uno nuovo dalla schermata di accesso.</div>
+          <button id="bam-recovery-back" class="gbtn" style="width:100%">Torna al login</button>
+        </div>
+      </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', html);
+    var b = document.getElementById('bam-recovery-back');
+    if (b) b.onclick = function(){ location.replace(location.origin + location.pathname); };
+  }
+
   function showRecoveryGate() {
     if (document.getElementById('bam-recovery-overlay')) return;
     const html = `
